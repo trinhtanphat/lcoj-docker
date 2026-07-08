@@ -12,16 +12,31 @@ compose() {
 }
 
 ensure_static_libraries() {
-  local font_dir="repo/resources/libs/latinmodernmath"
-  local base_url="https://raw.githubusercontent.com/luyencode/site-assets/master/latinmodernmath"
-  local file
+  download_asset_archive "https://github.com/luyencode/site-assets/archive/refs/heads/master.tar.gz" \
+    "repo/resources/libs" \
+    ".codex-site-assets-ready"
+  download_asset_archive "https://github.com/VNOI-Admin/vnoj-static/archive/refs/heads/master.tar.gz" \
+    "repo/resources/vnoj" \
+    ".codex-vnoj-assets-ready"
+}
 
-  mkdir -p "$font_dir"
-  for file in latinmodern-math.eot latinmodern-math.ttf latinmodern-math.woff latinmodern-math.woff2; do
-    if [ ! -s "$font_dir/$file" ]; then
-      curl -fsSL "$base_url/$file" -o "$font_dir/$file"
-    fi
-  done
+download_asset_archive() {
+  local url="$1"
+  local target="$2"
+  local marker="$3"
+  local tmp
+
+  if [ -f "$target/$marker" ]; then
+    return
+  fi
+
+  tmp="$(mktemp -d)"
+  curl -fsSL "$url" -o "$tmp/assets.tar.gz"
+  rm -rf "$target"
+  mkdir -p "$target"
+  tar -xzf "$tmp/assets.tar.gz" --strip-components=1 -C "$target"
+  touch "$target/$marker"
+  rm -rf "$tmp"
 }
 
 {
