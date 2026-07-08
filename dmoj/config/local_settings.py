@@ -135,9 +135,10 @@ DMOJ_RESOURCES = '/assets/resources/'
 ############################################
 
 ## DMOJ site display settings.
-SITE_NAME = 'LCOJ'
+SITE_NAME = os.environ.get('SITE_NAME', 'LCOJ')
 SITE_FULL_URL = os.environ.get('SITE_FULL_URL', 'http://localhost/')
-SITE_LONG_NAME = 'LCOJ: Luyện Code Online Judge'
+SITE_LONG_NAME = os.environ.get('SITE_LONG_NAME', 'LCOJ: Luyện Code Online Judge')
+SITE_BRAND_LOGO_URL = os.environ.get('SITE_BRAND_LOGO_URL', '')
 SITE_ADMIN_EMAIL = 'luyencodeonline@gmail.com'
 TERMS_OF_SERVICE_URL = None
 
