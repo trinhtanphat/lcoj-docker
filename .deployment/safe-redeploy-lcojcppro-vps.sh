@@ -11,6 +11,19 @@ compose() {
   docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.override.yml "$@"
 }
 
+ensure_static_libraries() {
+  local font_dir="repo/resources/libs/latinmodernmath"
+  local base_url="https://raw.githubusercontent.com/luyencode/site-assets/master/latinmodernmath"
+  local file
+
+  mkdir -p "$font_dir"
+  for file in latinmodern-math.eot latinmodern-math.ttf latinmodern-math.woff latinmodern-math.woff2; do
+    if [ ! -s "$font_dir/$file" ]; then
+      curl -fsSL "$base_url/$file" -o "$font_dir/$file"
+    fi
+  done
+}
+
 {
   echo "== start $(date -Is) =="
   uptime || true
@@ -20,6 +33,8 @@ compose() {
   sed -i 's/\r$//' scripts/initialize scripts/copy_static repo/make_style.sh || true
   chmod +x scripts/initialize scripts/copy_static repo/make_style.sh || true
   bash scripts/initialize
+  echo "== ensure static libraries =="
+  ensure_static_libraries
 
   echo "== stop previous $PROJECT =="
   pkill -TERM -f /opt/lcoj-cppro-restart.log || true
