@@ -5,3 +5,4 @@ dmoj/problems/
 dmoj/environment/*.env
 dmoj/*.sh
 .agent
+.deployment/*.tar.gz
