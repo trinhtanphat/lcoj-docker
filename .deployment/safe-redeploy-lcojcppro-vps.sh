@@ -35,7 +35,7 @@ compose() {
   sleep 45
 
   echo "== migrate in one-off site container =="
-  compose run --rm --no-deps site python3 manage.py migrate --noinput
+  compose run --rm --no-deps --entrypoint python3 site manage.py migrate --noinput
 
   echo "== start site for static build =="
   compose up -d site
