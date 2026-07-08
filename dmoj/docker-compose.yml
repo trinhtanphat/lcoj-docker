@@ -75,8 +75,8 @@ services:
     networks: [site, nginx, db]
     depends_on: [base, db, redis]
     ports:
-      - 9998:9998
-      - 9999:9999
+      - ${BRIDGED_PORT:-9998}:9998
+      - ${BRIDGED_SECURE_PORT:-9999}:9999
   wsevent:
     container_name: lcoj_wsevent
     build:
