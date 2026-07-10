@@ -1952,6 +1952,8 @@ const cpproI18n = {
     'user.settings': 'Cài đặt',
     'user.logout': 'Đăng xuất',
     'admin.title': 'Quản trị',
+    'admin.dmoj': 'DMOJ Admin',
+    'admin.cppro': 'CPPro Management',
     'admin.dashboard': 'Bảng quản trị',
     'admin.problems': 'Bài tập',
     'admin.contests': 'Kỳ thi',
@@ -2017,6 +2019,8 @@ const cpproI18n = {
     'user.settings': 'Settings',
     'user.logout': 'Log out',
     'admin.title': 'Management',
+    'admin.dmoj': 'DMOJ Admin',
+    'admin.cppro': 'CPPro Management',
     'admin.dashboard': 'Dashboard',
     'admin.problems': 'Problems',
     'admin.contests': 'Contests',
@@ -2924,20 +2928,16 @@ function Topbar({
     setNotificationOpen(false);
     go(nextPath);
   };
-  const openPlatformRoute = (nextPath: string) => {
+  const openLegacyAdminRoute = () => {
     setUserOpen(false);
     setNavMenuOpen(false);
     setNotificationOpen(false);
     if (shouldUseLcojLegacyRoutes()) {
-      openLcojLegacyPath(/^\/(?:vi|en)\/management(?:\/|$)|^\/management(?:\/|$)|^\/admin(?:\/|$)/.test(nextPath) ? '/admin/' : nextPath);
+      openLcojLegacyPath('/admin/');
       return;
     }
     syncPlatformBridgeSessionFromStorage();
-    const managementPath = /^\/(?:vi|en)\/management(?:\/|$)/.test(nextPath)
-      || /^\/management(?:\/|$)/.test(nextPath);
-    window.location.assign(managementPath
-      ? managementFrontendUrlForPath(nextPath, platformFrontendUrl)
-      : legacyFrontendUrlForPath(nextPath, platformFrontendUrl));
+    window.location.assign(legacyFrontendUrlForPath('/admin/', platformFrontendUrl));
   };
   const adminRoles = [
     currentUser?.role,
@@ -3242,15 +3242,26 @@ function Topbar({
                       <Shield size={15} />
                       {t(locale, 'admin.title')}
                     </span>
-                    <button
-                      type="button"
-                      role="menuitem"
-                      data-admin-management-action="true"
-                      onClick={() => openPlatformRoute(withCpproLocale(locale, '/management'))}
-                    >
-                      <ShieldCheck size={16} />
-                      {t(locale, 'admin.title')}
-                    </button>
+                    <div data-user-menu-admin-grid>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        data-admin-dmoj-action="true"
+                        onClick={openLegacyAdminRoute}
+                      >
+                        <Shield size={16} />
+                        {t(locale, 'admin.dmoj')}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        data-admin-management-action="true"
+                        onClick={() => openRoute('/management')}
+                      >
+                        <ShieldCheck size={16} />
+                        {t(locale, 'admin.cppro')}
+                      </button>
+                    </div>
                   </div>
                 ) : null}
                 <button type="button" role="menuitem" data-logout-action onClick={onLogout}><LogOut size={16} />{t(locale, 'user.logout')}</button>

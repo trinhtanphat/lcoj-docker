@@ -12,10 +12,10 @@ compose() {
 }
 
 ensure_static_libraries() {
-  download_asset_archive "https://github.com/luyencode/site-assets/archive/refs/heads/master.tar.gz" \
+  download_asset_archive "https://github.com/trinhtanphat/site-assets/archive/refs/heads/master.tar.gz" \
     "repo/resources/libs" \
     ".codex-site-assets-ready"
-  download_asset_archive "https://github.com/VNOI-Admin/vnoj-static/archive/refs/heads/master.tar.gz" \
+  download_asset_archive "https://github.com/trinhtanphat/vnoj-static/archive/refs/heads/master.tar.gz" \
     "repo/resources/vnoj" \
     ".codex-vnoj-assets-ready"
 }

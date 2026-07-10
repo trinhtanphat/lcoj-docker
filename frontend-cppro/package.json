@@ -10,6 +10,7 @@
     "verify:crawl": "npm run data:crawl && npm run audit:crawl && npm run build",
     "build:lcoj": "node scripts/build-lcoj.mjs",
     "build": "tsc --noEmit && vite build",
+    "test:admin-menu": "node scripts/admin-menu-contract.mjs",
     "preview": "vite preview --host 0.0.0.0 --port 3002"
   },
   "dependencies": {

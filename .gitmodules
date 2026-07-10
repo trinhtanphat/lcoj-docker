@@ -4,4 +4,4 @@
 
 [submodule "lcoj-docs"]
 	path = lcoj-docs
-	url = https://github.com/luyencode/docs
+	url = https://github.com/trinhtanphat/docs.git
