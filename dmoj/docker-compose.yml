@@ -107,6 +107,7 @@ services:
       - contestdatacache:/contestdatacache/
       - cache:/cache/
       - ./media/:/media/
+      - ./repo/cppro_frontend/:/cppro_frontend/:ro
       - ./nginx/conf.d/:/etc/nginx/conf.d/
     env_file: [environment/site.env]
     networks: [nginx]

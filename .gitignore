@@ -6,3 +6,20 @@ dmoj/environment/*.env
 dmoj/*.sh
 .agent
 .deployment/*.tar.gz
+
+# Agent/session scratch
+.claude/
+.codex-backups/
+.codex-screenshots/
+
+# frontend-cppro: build inputs/outputs
+frontend-cppro/node_modules/
+frontend-cppro/dist/
+frontend-cppro/test-results/
+
+# Crawled oj.cppro.vn snapshot. The LCOJ build reads its data from the real
+# LCOJ database over /api/v2, never from this snapshot, so it is not shipped
+# and not versioned. Regenerate locally with `npm run data:crawl` if the
+# standalone `static` data-source mode is ever needed.
+frontend-cppro/public/data/
+frontend-cppro/public/manifests/

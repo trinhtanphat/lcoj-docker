@@ -19,6 +19,13 @@ HOST = os.environ.get('HOST', 'localhost')
 # You must do this once you set DEBUG to False.
 ALLOWED_HOSTS = [HOST]
 
+
+def _env_flag(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {'1', 'true', 'yes', 'on'}
+
 # Optional apps that DMOJ can make use of.
 INSTALLED_APPS += ()
 
@@ -126,6 +133,14 @@ STATIC_ROOT = '/assets/static/'
 STATIC_URL = '/static/'
 
 # Uncomment to use hashed filenames with the cache framework.
+# Some vendored CSS references font variants that are not shipped; strict manifest
+# mode makes collectstatic abort and 500s every native page on a missing manifest
+# entry. Relax strictness so missing entries fall back to the unhashed name.
+# NOTE: patch the class attribute rather than subclassing here — DMOJ execs
+# local_settings.py inside the settings namespace, so a dotted path to a class
+# defined in this file would be re-imported standalone and fail (NameError: os).
+from django.contrib.staticfiles.storage import ManifestStaticFilesStorage  # noqa: E402
+ManifestStaticFilesStorage.manifest_strict = False
 STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.ManifestStaticFilesStorage'
 
 DMOJ_RESOURCES = '/assets/resources/'
@@ -168,6 +183,9 @@ BRIDGED_DJANGO_ADDRESS = [(os.environ.get('BRIDGED_HOST', 'bridged'), 9998)]
 ## DMOJ features.
 # Set to True to enable full-text searching for problems.
 ENABLE_FTS = False
+
+# Enable LCOJ's existing read-only API v2 for the CPPRO public frontend.
+VNOJ_ENABLE_API = _env_flag('VNOJ_ENABLE_API', False)
 
 # Set of email providers to ban when a user registers, e.g., {'throwawaymail.com'}.
 BAD_MAIL_PROVIDERS = set()

@@ -2,6 +2,6 @@
 	path = dmoj/repo
 	url = https://github.com/trinhtanphat/OJ.git
 
-[submodule "docs"]
-	path = docs
+[submodule "lcoj-docs"]
+	path = lcoj-docs
 	url = https://github.com/luyencode/docs

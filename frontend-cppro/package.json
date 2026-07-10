@@ -1,0 +1,33 @@
+{
+  "name": "itcoder-cppro-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 3002",
+    "data:crawl": "node scripts/build-crawl-data.mjs",
+    "audit:crawl": "node scripts/audit-crawl-assets.mjs",
+    "verify:crawl": "npm run data:crawl && npm run audit:crawl && npm run build",
+    "build:lcoj": "node scripts/build-lcoj.mjs",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0 --port 3002"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^6.0.3",
+    "katex": "^0.17.0",
+    "lucide-react": "^1.22.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "typescript": "5.8",
+    "vite": "^8.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.1",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3"
+  }
+}
