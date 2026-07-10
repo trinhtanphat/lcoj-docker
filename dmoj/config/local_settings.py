@@ -185,7 +185,11 @@ BRIDGED_DJANGO_ADDRESS = [(os.environ.get('BRIDGED_HOST', 'bridged'), 9998)]
 ENABLE_FTS = False
 
 # Enable LCOJ's existing read-only API v2 for the CPPRO public frontend.
-VNOJ_ENABLE_API = _env_flag('VNOJ_ENABLE_API', False)
+# Defaults to True because the CPPRO public UI reads *all* of its data from
+# /api/v2 and has no fallback: with the API off, urls.py never registers the
+# routes, every fetch 404s, and the site renders empty. Set VNOJ_ENABLE_API=0
+# to turn it off deliberately.
+VNOJ_ENABLE_API = _env_flag('VNOJ_ENABLE_API', True)
 
 # Set of email providers to ban when a user registers, e.g., {'throwawaymail.com'}.
 BAD_MAIL_PROVIDERS = set()
