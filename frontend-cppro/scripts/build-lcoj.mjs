@@ -13,7 +13,7 @@ const args = npmCli ? [npmCli, 'run', 'build'] : ['run', 'build'];
 const child = spawn(command, args, {
   env: {
     ...process.env,
-    VITE_CPPRO_DATA_SOURCE: 'lcoj',
+    VITE_CPPRO_DEPLOYMENT: 'lcoj',
   },
   shell: false,
   stdio: 'inherit',

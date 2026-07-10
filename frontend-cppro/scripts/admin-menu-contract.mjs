@@ -5,9 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const [main, styles] = await Promise.all([
+const [main, styles, lcojBuild] = await Promise.all([
   readFile(path.join(appRoot, 'src', 'main.tsx'), 'utf8'),
   readFile(path.join(appRoot, 'src', 'styles.css'), 'utf8'),
+  readFile(path.join(appRoot, 'scripts', 'build-lcoj.mjs'), 'utf8'),
 ]);
 
 function occurrences(value, pattern) {
@@ -34,6 +35,17 @@ const legacyHandler = main.slice(legacyHandlerStart, legacyHandlerEnd);
 assert.match(legacyHandler, /openLcojLegacyPath\('\/admin\/'\)/);
 assert.match(legacyHandler, /window\.location\.assign\(legacyFrontendUrlForPath\('\/admin\/', platformFrontendUrl\)\)/);
 assert.doesNotMatch(legacyHandler, /\bgo\(/, 'Legacy /admin/ must bypass the SPA router.');
+assert.doesNotMatch(
+  main,
+  /const isAdminUser = !lcojLegacyRoutes/,
+  'LCOJ mode must still render both admin rows for an authorized manager.',
+);
+assert.match(main, /Boolean\(currentUser\?\.is_teacher\)/, 'Authenticated DMOJ staff must receive the management menu.');
+assert.match(main, /Boolean\(user\?\.is_teacher\)/, 'The CPPro management gate must agree with the DMOJ staff session.');
+assert.match(main, /fetch\('\/api\/cppro\/auth\/me'/, 'LCOJ must obtain the signed-in DMOJ user from the server.');
+assert.match(main, /if \(parts\[0\] === 'management'\) \{[\s\S]{0,240}<CpproManagementPage/, 'The CPPro row must remain inside the CPPro SPA.');
+assert.match(lcojBuild, /VITE_CPPRO_DEPLOYMENT:\s*'lcoj'/, 'The LCOJ build must enable the authenticated bridge.');
+assert.doesNotMatch(lcojBuild, /VITE_CPPRO_DATA_SOURCE/, 'The LCOJ build must not enter static-data mode.');
 
 assert.match(
   styles,

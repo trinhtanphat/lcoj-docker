@@ -17937,6 +17937,117 @@ html[data-theme='dark'] .cppro-explore-people dl > div {
 .cppro-management-package-summary > svg {
   color: var(--blue);
 }
+.cppro-management-existing-testcases {
+  margin-top: 0.75rem;
+  overflow: hidden;
+  border: 1px solid rgba(96, 165, 250, 0.32);
+  border-radius: 0.75rem;
+  background: rgba(8, 20, 39, 0.72);
+}
+
+.cppro-management-existing-testcases > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  color: #eaf6ff;
+  font-size: 0.8rem;
+  font-weight: 900;
+  padding: 0.78rem 0.9rem;
+}
+
+.cppro-management-existing-testcases > summary::marker {
+  color: #60a5fa;
+}
+
+.cppro-management-existing-testcase-list {
+  display: grid;
+  gap: 0.7rem;
+  max-height: 34rem;
+  overflow: auto;
+  border-top: 1px solid rgba(96, 165, 250, 0.2);
+  padding: 0.8rem;
+}
+
+.cppro-management-existing-testcase-list > article {
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 0.65rem;
+  background: rgba(15, 23, 42, 0.92);
+  overflow: hidden;
+}
+
+.cppro-management-existing-testcase-list > article > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 0.55rem 0.7rem;
+}
+
+.cppro-management-existing-testcase-list > article > header strong {
+  color: #f8fafc;
+  font-size: 0.78rem;
+}
+
+.cppro-management-existing-testcase-list > article > header span {
+  border: 1px solid rgba(96, 165, 250, 0.4);
+  border-radius: 999px;
+  color: #bfdbfe;
+  font-size: 0.65rem;
+  font-weight: 900;
+  padding: 0.18rem 0.45rem;
+  text-transform: uppercase;
+}
+
+.cppro-management-existing-testcase-list > article > div {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  padding: 0.7rem;
+}
+
+.cppro-management-existing-testcase-list section {
+  min-width: 0;
+}
+
+.cppro-management-existing-testcase-list small {
+  color: #94a3b8;
+  display: block;
+  font-size: 0.66rem;
+  font-weight: 900;
+  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+}
+
+.cppro-management-existing-testcase-list pre {
+  max-height: 12rem;
+  margin: 0;
+  overflow: auto;
+  border-radius: 0.45rem;
+  background: #020617;
+  color: #dbeafe;
+  font-size: 0.73rem;
+  line-height: 1.45;
+  padding: 0.6rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cppro-management-existing-testcase-list > article > p {
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+  color: #cbd5e1;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  margin: 0;
+  padding: 0.65rem 0.7rem;
+}
+
+@media (max-width: 700px) {
+  .cppro-management-existing-testcase-list > article > div {
+    grid-template-columns: 1fr;
+  }
+}
 
 .cppro-management-form-actions {
   display: flex;

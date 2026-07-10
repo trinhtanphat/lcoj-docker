@@ -200,26 +200,29 @@ function cpproDataSourceMode() {
 }
 
 function shouldUseStaticCpproData() {
-  const mode = cpproDataSourceMode();
-  return mode === 'static' || mode === 'lcoj';
+  return cpproDataSourceMode() === 'static';
 }
 
 // True only for the LCOJ build. Its data comes from the real LCOJ/DMOJ database
 // over /api/v2 — never from the crawled oj.cppro.vn snapshot, which is stale
 // foreign data. An honest empty state beats showing someone else's problems.
 function isLcojBackendMode() {
-  return cpproDataSourceMode() === 'lcoj';
+  return cpproDataSourceMode() === 'lcoj'
+    || String(import.meta.env.VITE_CPPRO_DEPLOYMENT || '').trim().toLowerCase() === 'lcoj';
 }
 
 function shouldUseLcojLegacyRoutes() {
-  return shouldUseStaticCpproData();
+  return shouldUseStaticCpproData() || isLcojBackendMode();
 }
 
 type CpproFetchInit = RequestInit & { timeoutMs?: number };
 
 async function cpproApiFetch<T>(path: string, init: CpproFetchInit = {}): Promise<T> {
+  if (isLcojBackendMode()) {
+    return lcojApiFetch<T>(`/api/cppro${path}`, init);
+  }
   if (shouldUseStaticCpproData()) {
-    throw new Error('This CPPRO API action is disabled while the user frontend is attached to the LCOJ backend.');
+    throw new Error('This CPPRO API action is disabled while this static preview is active.');
   }
   const { timeoutMs, ...fetchInit } = init;
   const headers = new Headers(fetchInit.headers);
@@ -244,6 +247,56 @@ async function cpproApiFetch<T>(path: string, init: CpproFetchInit = {}): Promis
         || data?.message
         || (response.status === 413 ? 'Dữ liệu gửi lên quá lớn. Hãy chọn ảnh nhỏ hơn hoặc để hệ thống nén ảnh trước khi lưu.' : `Request failed with ${response.status}`);
       throw new Error(message);
+    }
+    return data as T;
+  } finally {
+    if (timeout) window.clearTimeout(timeout);
+  }
+}
+
+let lcojCsrfBootstrap: Promise<void> | null = null;
+
+async function ensureLcojCsrfCookie() {
+  const existing = readSharedCookie('csrftoken');
+  if (existing) return existing;
+
+  if (!lcojCsrfBootstrap) {
+    lcojCsrfBootstrap = fetch('/api/cppro/auth/me', {
+      cache: 'no-store',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    }).then(() => undefined).finally(() => {
+      lcojCsrfBootstrap = null;
+    });
+  }
+  await lcojCsrfBootstrap;
+  return readSharedCookie('csrftoken');
+}
+
+async function lcojApiFetch<T>(path: string, init: CpproFetchInit = {}): Promise<T> {
+  const { timeoutMs, ...fetchInit } = init;
+  const headers = new Headers(fetchInit.headers);
+  const isFormData = typeof FormData !== 'undefined' && fetchInit.body instanceof FormData;
+  if (fetchInit.body && !isFormData && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  const method = String(fetchInit.method || 'GET').toUpperCase();
+  let csrf = readSharedCookie('csrftoken');
+  if (!csrf && !headers.has('X-CSRFToken') && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    csrf = await ensureLcojCsrfCookie();
+  }
+  if (csrf && !headers.has('X-CSRFToken')) headers.set('X-CSRFToken', csrf);
+  const controller = timeoutMs && !fetchInit.signal ? new AbortController() : null;
+  const timeout = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const response = await fetch(path, {
+      ...fetchInit,
+      credentials: 'include',
+      headers,
+      signal: fetchInit.signal || controller?.signal,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(String(data?.error || data?.message || `LCOJ API error ${response.status}`));
     }
     return data as T;
   } finally {
@@ -457,7 +510,7 @@ function rowsFromApi<T = Record<string, unknown>>(payload: unknown): T[] {
     if (record.data && typeof record.data === 'object' && Array.isArray((record.data as Record<string, unknown>).objects)) {
       return (record.data as Record<string, unknown>).objects as T[];
     }
-    for (const key of ['objects', 'items', 'groups', 'tickets', 'nodes', 'incidents', 'logs', 'quizzes', 'comments', 'posts', 'notifications', 'languages', 'members', 'requests', 'answers']) {
+    for (const key of ['objects', 'items', 'groups', 'tickets', 'nodes', 'incidents', 'logs', 'quizzes', 'comments', 'posts', 'notifications', 'languages', 'members', 'requests', 'answers', 'testcases']) {
       if (Array.isArray(record[key])) return record[key] as T[];
     }
     for (const key of ['item', 'group', 'ticket', 'node', 'incident', 'log', 'quiz', 'comment', 'post', 'notification', 'language', 'member', 'request', 'answer', 'badge', 'user', 'organization', 'contest', 'problem']) {
@@ -2245,6 +2298,48 @@ function readStoredCpproUser(): StoredCpproUser | null {
   }
 }
 
+async function fetchLcojCurrentUser(): Promise<StoredCpproUser | null> {
+  try {
+    const response = await fetch('/api/cppro/auth/me', {
+      cache: 'no-store',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+    const payload = await response.json() as { user?: Record<string, unknown> | null };
+    const user = payload?.user;
+    const username = String(user?.username || '').trim();
+    if (!username) return null;
+    const roles = Array.isArray(user?.roles)
+      ? user!.roles.map((role) => String(role)).filter(Boolean)
+      : [String(user?.role || 'user')];
+    return {
+      username,
+      displayName: String(user?.full_name || user?.fullName || username),
+      full_name: String(user?.full_name || user?.fullName || username),
+      email: String(user?.email || ''),
+      avatar_url: user?.avatar_url ? String(user.avatar_url) : user?.avatarUrl ? String(user.avatarUrl) : null,
+      role: String(user?.role || roles[0] || 'user'),
+      roles,
+      tags: Array.isArray(user?.tags) ? user!.tags.map((tag) => String(tag)).filter(Boolean) : roles,
+      is_teacher: Boolean(user?.is_teacher || user?.isTeacher),
+      membership_tier: String(user?.membership_tier || user?.membershipTier || 'free') as StoredCpproUser['membership_tier'],
+      membership_expires_at: user?.membership_expires_at ? String(user.membership_expires_at) : null,
+      streak_timezone: String(user?.streak_timezone || user?.streakTimezone || 'Asia/Bangkok'),
+      streak_timezone_changed_at: user?.streak_timezone_changed_at ? String(user.streak_timezone_changed_at) : null,
+      rating: Number(user?.rating || 0) || 0,
+      rank_name: String(user?.rank_name || user?.rankName || ''),
+      solved: Number(user?.solved || 0) || 0,
+      score: Number(user?.score || 0) || 0,
+      pp_score: Number(user?.pp_score || user?.ppScore || 0) || 0,
+      streak: Number(user?.streak || user?.current_streak || 0) || 0,
+      max_streak: Number(user?.max_streak || user?.longest_streak || 0) || 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function storedUserToRow(user: StoredCpproUser): UserRow {
   const roles = Array.isArray(user.roles) ? user.roles.filter(Boolean) : [];
   const tags = Array.isArray(user.tags) ? user.tags.filter(Boolean) : roles;
@@ -2526,6 +2621,17 @@ function App() {
   }, [currentUser?.username]);
 
   useEffect(() => {
+    if (!isLcojBackendMode()) return;
+    let cancelled = false;
+    void fetchLcojCurrentUser().then((user) => {
+      if (!cancelled) setCurrentUser(user);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  useEffect(() => {
     if (dataLoading) return;
     if (shouldUseStaticCpproData()) return;
     let cancelled = false;
@@ -2611,7 +2717,11 @@ function App() {
 
   useEffect(() => {
     const onStorage = () => {
-      setCurrentUser(shouldUseLcojLegacyRoutes() ? null : readStoredCpproUser());
+      if (isLcojBackendMode()) {
+        void fetchLcojCurrentUser().then(setCurrentUser);
+      } else {
+        setCurrentUser(readStoredCpproUser());
+      }
       setTheme(readStoredTheme());
     };
     window.addEventListener('storage', onStorage);
@@ -2948,7 +3058,20 @@ function Topbar({
     .filter(Boolean)
     .map((role) => String(role).toLowerCase());
   const lcojLegacyRoutes = shouldUseLcojLegacyRoutes();
-  const isAdminUser = !lcojLegacyRoutes && adminRoles.some((role) => role.includes('admin') || role.includes('quan-tri') || role.includes('quản trị'));
+  const lcojStaffManager = lcojLegacyRoutes && (Boolean(currentUser?.is_teacher) || adminRoles.some((role) => (
+    role === 'teacher'
+    || role === 'staff'
+    || role.includes('teacher')
+    || role.includes('staff')
+  )));
+  const isAdminUser = lcojStaffManager || adminRoles.some((role) => (
+    role === 'admin'
+    || role === 'moderator'
+    || role.includes('admin')
+    || role.includes('moderator')
+    || role.includes('quan-tri')
+    || role.includes('quản trị')
+  ));
   const notificationTitle = t(locale, 'notifications.title');
   const notificationItems: Array<{
     id: string;
@@ -3359,7 +3482,10 @@ function Router({
     return <ContestDetail contest={contestForRoute} data={data} go={go} currentUser={currentUser} activeTab={contestTabFromPath(parts[2])} />;
   }
   if (parts[0] === 'users' && parts[1]) return <Profile requestedId={parts[1]} profile={data.profiles[parts[1]] || data.users.find((u) => u.username === parts[1])} data={data} go={go} currentUser={currentUser} onUserUpdate={onUserUpdate} />;
-  if (parts[0] === 'management' || parts[0] === 'admin') {
+  if (parts[0] === 'management') {
+    return <CpproManagementPage section={parts.slice(1).join('/') || 'dashboard'} data={data} go={go} currentUser={currentUser} />;
+  }
+  if (parts[0] === 'admin') {
     return shouldUseLcojLegacyRoutes()
       ? <LegacyRedirectPage target="/admin/" />
       : <CpproManagementPage section={parts.slice(1).join('/') || 'dashboard'} data={data} go={go} currentUser={currentUser} />;
@@ -3491,7 +3617,21 @@ function isCpproAdminUser(user: StoredCpproUser | null | undefined) {
     ...(Array.isArray(user?.roles) ? user.roles : []),
     ...(Array.isArray(user?.tags) ? user.tags : []),
   ].filter(Boolean).map((role) => String(role).toLowerCase());
-  return roles.some((role) => role === 'admin' || role.includes('admin') || role.includes('quan-tri') || role.includes('quan tri') || role.includes('quản trị'));
+  const lcojStaffManager = shouldUseLcojLegacyRoutes() && (Boolean(user?.is_teacher) || roles.some((role) => (
+    role === 'teacher'
+    || role === 'staff'
+    || role.includes('teacher')
+    || role.includes('staff')
+  )));
+  return lcojStaffManager || roles.some((role) => (
+    role === 'admin'
+    || role === 'moderator'
+    || role.includes('admin')
+    || role.includes('moderator')
+    || role.includes('quan-tri')
+    || role.includes('quan tri')
+    || role.includes('quản trị')
+  ));
 }
 
 function estimateCpproRating(user: Record<string, unknown>) {
@@ -3774,6 +3914,7 @@ function managementActionsForSection(section: ManagementSectionKey): ManagementA
 }
 
 function managementPrimaryReadEndpoint(section: ManagementSectionKey) {
+  if (isLcojBackendMode()) return `/admin/management/${section}`;
   const endpoints: Partial<Record<ManagementSectionKey, string>> = {
     dashboard: '/admin/dashboard?range=week&recentPage=1&recentLimit=50',
     analytics: '/admin/analytics?days=30',
@@ -5143,7 +5284,11 @@ function CpproManagementPage({
     let cancelled = false;
     setLoading(true);
     setError('');
-    Promise.all([
+    Promise.all(isLcojBackendMode() ? [
+      cpproApiFetch<CpproRatingSettings>('/admin/management/rating'),
+      cpproApiFetch<unknown>('/admin/management/contests'),
+      cpproApiFetch<{ rows?: Array<Record<string, unknown>> }>('/admin/management/users'),
+    ] : [
       cpproApiFetch<CpproRatingSettings>('/admin/settings/rating'),
       cpproApiFetch<unknown>('/admin/contest-ratings?limit=80'),
       cpproApiFetch<{ rows?: Array<Record<string, unknown>> }>('/admin/users?page=1&limit=200&withCount=true'),
@@ -5169,7 +5314,7 @@ function CpproManagementPage({
   useEffect(() => {
     if (!isAdmin || sectionKey !== 'users') return;
     let cancelled = false;
-    cpproApiFetch<unknown>('/admin/users?page=1&limit=200&withCount=true')
+    cpproApiFetch<unknown>(isLcojBackendMode() ? '/admin/management/users' : '/admin/users?page=1&limit=200&withCount=true')
       .then((payload) => {
         if (cancelled) return;
         const rawRows = rowsFromApi<Record<string, unknown>>(payload);
@@ -8653,11 +8798,11 @@ function normalizeManagementProblemTestCases(value: unknown): ManagementProblemT
       ? row.outputs.map((entry) => String(entry ?? '')).filter((entry) => entry.length > 0)
       : undefined;
     return {
-      input: String(row.input ?? ''),
-      ...(row.output !== undefined ? { output: String(row.output ?? '') } : {}),
+      input: String(row.input ?? row.input_file ?? ''),
+      ...(row.output !== undefined || row.output_file !== undefined ? { output: String(row.output ?? row.output_file ?? '') } : {}),
       ...(outputs?.length ? { outputs } : {}),
       ...(row.explanation !== undefined ? { explanation: String(row.explanation ?? '') } : {}),
-      isSample: Boolean(row.isSample ?? row.is_sample),
+      isSample: Boolean(row.isSample ?? row.is_sample ?? row.is_pretest),
     };
   }).filter((item) => item.input.length > 0 || String(item.output ?? '').length > 0 || (item.outputs?.length || 0) > 0);
 }
@@ -8714,6 +8859,9 @@ function ManagementProblemForm({
   const [exportingPackage, setExportingPackage] = useState(false);
   const [testcaseZipMode, setTestcaseZipMode] = useState<'append' | 'replace'>('append');
   const [packageSummary, setPackageSummary] = useState('');
+  const [existingTestCases, setExistingTestCases] = useState<ManagementProblemTestCase[]>([]);
+  const [existingTestCasesLoading, setExistingTestCasesLoading] = useState(editing);
+  const [existingTestCasesError, setExistingTestCasesError] = useState('');
   const packageInputRef = useRef<HTMLInputElement | null>(null);
   const testcaseZipInputRef = useRef<HTMLInputElement | null>(null);
   const statementAssetInputRef = useRef<HTMLInputElement | null>(null);
@@ -8725,13 +8873,19 @@ function ManagementProblemForm({
   useEffect(() => {
     if (!editing) {
       setDraft(emptyManagementProblemDraft);
+      setExistingTestCases([]);
+      setExistingTestCasesLoading(false);
+      setExistingTestCasesError('');
       setLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
+    setExistingTestCases([]);
+    setExistingTestCasesError('');
+    setExistingTestCasesLoading(true);
     cpproApiFetch<Record<string, unknown>>(`/problems/${encodeURIComponent(routeId)}`)
-      .then((row) => {
+      .then(async (row) => {
         if (cancelled) return;
         setDraft({
           externalId: String(row.external_id || row.externalId || ''),
@@ -8739,8 +8893,8 @@ function ManagementProblemForm({
           description: String(row.description || row.statement || ''),
           difficulty: ['Medium', 'Hard'].includes(String(row.difficulty)) ? String(row.difficulty) as 'Medium' | 'Hard' : 'Easy',
           rating: Number(row.rating ?? 1) || 1,
-          timeLimit: Number(row.time_limit ?? row.timeLimit ?? 1000) || 1000,
-          memoryLimit: Number(row.memory_limit ?? row.memoryLimit ?? 256) || 256,
+          timeLimit: Number(row.time_limit ?? row.timeLimit ?? row.time_limit_ms ?? row.timeLimitMs ?? 1000) || 1000,
+          memoryLimit: Number(row.memory_limit ?? row.memoryLimit ?? row.memory_limit_mb ?? row.memoryLimitMb ?? 256) || 256,
           visibility: ['public', 'waiting', 'organization'].includes(String(row.visibility)) ? String(row.visibility) as ManagementProblemDraft['visibility'] : 'private',
           scoringMode: Boolean(row.judge_run_all ?? row.judgeRunAll) ? 'partial' : 'full',
           allowedLanguages: normalizeStringList(row.allowed_languages ?? row.allowedLanguages, []),
@@ -8764,9 +8918,26 @@ function ManagementProblemForm({
           adminAttachmentData: null,
           adminAttachmentSize: Number(row.admin_attachment_size ?? row.adminAttachmentSize ?? 0) || null,
         });
+        const problemId = String(row.id ?? row.problem_id ?? routeId);
+        try {
+          const testCasePayload = await cpproApiFetch<unknown>(`/problems/${encodeURIComponent(problemId)}/testcases`);
+          if (!cancelled) {
+            setExistingTestCases(normalizeManagementProblemTestCases(rowsFromApi<Record<string, unknown>>(testCasePayload)));
+          }
+        } catch (error) {
+          if (!cancelled) {
+            setExistingTestCases([]);
+            setExistingTestCasesError(error instanceof Error ? error.message : 'Could not load saved testcase details.');
+          }
+        } finally {
+          if (!cancelled) setExistingTestCasesLoading(false);
+        }
       })
       .catch((error) => {
-        if (!cancelled) onToast({ tone: 'error', text: error instanceof Error ? error.message : 'Could not load problem.' });
+        if (!cancelled) {
+          setExistingTestCasesLoading(false);
+          onToast({ tone: 'error', text: error instanceof Error ? error.message : 'Could not load problem.' });
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -8924,6 +9095,13 @@ function ManagementProblemForm({
       onToast({ tone: 'error', text: 'Upload a .zip testcase archive.' });
       return;
     }
+    if (editing && isLcojBackendMode()) {
+      onToast({
+        tone: 'info',
+        text: 'CPPRO management shows saved LCOJ testcases read-only. Use the DMOJ Testcases editor to replace the archive.',
+      });
+      return;
+    }
     setImportingTests(true);
     setPackageSummary(`Importing testcase ZIP ${file.name}...`);
     try {
@@ -8942,6 +9120,16 @@ function ManagementProblemForm({
         const totalCount = Number(imported.totalCount ?? imported.total_count ?? importedCount) || importedCount;
         const duplicatesSkipped = Number(imported.duplicatesSkipped ?? imported.duplicates_skipped ?? 0) || 0;
         setDraft((current) => ({ ...current, testCases: [] }));
+        setExistingTestCasesLoading(true);
+        void cpproApiFetch<unknown>(`/problems/${encodeURIComponent(routeId)}/testcases`)
+          .then((testCasePayload) => {
+            setExistingTestCases(normalizeManagementProblemTestCases(rowsFromApi<Record<string, unknown>>(testCasePayload)));
+            setExistingTestCasesError('');
+          })
+          .catch((error) => {
+            setExistingTestCasesError(error instanceof Error ? error.message : 'Testcase ZIP was imported, but the refreshed preview could not be loaded.');
+          })
+          .finally(() => setExistingTestCasesLoading(false));
         setPackageSummary(
           `${testcaseZipMode === 'replace' ? 'Replaced with' : 'Added'} ${importedCount.toLocaleString('vi-VN')} testcase(s). `
           + `${totalCount.toLocaleString('vi-VN')} testcase(s) are now saved in database.`
@@ -9046,6 +9234,7 @@ function ManagementProblemForm({
   };
 
   if (loading) return <DataLoadingPanel label="Loading problem editor" rows={7} />;
+  const visibleTestCases = editing ? existingTestCases : draft.testCases;
   return (
     <section className="cppro-management-subpage" data-management-subpage="problem">
       <div className="cppro-management-form-grid">
@@ -9196,10 +9385,28 @@ function ManagementProblemForm({
           <div className="cppro-management-package-summary" data-management-problem-testcase-summary>
             <ListChecks size={16} />
             <span>
-              <strong>{draft.testCases.length ? `${draft.testCases.length.toLocaleString('vi-VN')} testcase(s) ready` : editing ? 'Existing testcases remain unchanged' : 'Manual sample testcase mode'}</strong>
-              <small>{draft.testCases.length ? `${draft.testCases.filter((item) => item.isSample).length.toLocaleString('vi-VN')} sample testcase(s) will be saved.` : 'Upload a ZIP package to import many testcase files at once.'}</small>
+              <strong>{existingTestCasesLoading ? 'Loading protected testcase details…' : visibleTestCases.length ? `${visibleTestCases.length.toLocaleString('vi-VN')} testcase(s) available` : editing ? 'No saved testcase found' : 'Manual sample testcase mode'}</strong>
+              <small>{editing ? 'Saved testcase data is read-only here; use the testcase ZIP workflow to append or replace it.' : visibleTestCases.length ? `${visibleTestCases.filter((item) => item.isSample).length.toLocaleString('vi-VN')} sample testcase(s) will be saved.` : 'Upload a ZIP package to import many testcase files at once.'}</small>
             </span>
           </div>
+          {existingTestCasesError ? <p className="service-message">{existingTestCasesError}</p> : null}
+          {editing && existingTestCases.length ? (
+            <details className="cppro-management-existing-testcases" data-management-existing-testcases>
+              <summary><Eye size={16} />View saved testcase details ({existingTestCases.length.toLocaleString('vi-VN')})</summary>
+              <div className="cppro-management-existing-testcase-list">
+                {existingTestCases.map((testCase, index) => (
+                  <article key={`${index}-${testCase.input.slice(0, 32)}`}>
+                    <header><strong>Test #{index + 1}</strong>{testCase.isSample ? <span>Sample</span> : <span>Private</span>}</header>
+                    <div>
+                      <section><small>Input</small><pre>{testCase.input || '∅'}</pre></section>
+                      <section><small>Expected output</small><pre>{testCase.output || testCase.outputs?.join('\n') || '∅'}</pre></section>
+                    </div>
+                    {testCase.explanation ? <p>{testCase.explanation}</p> : null}
+                  </article>
+                ))}
+              </div>
+            </details>
+          ) : null}
         </aside>
       </div>
       <footer className="cppro-management-form-actions">
@@ -13024,7 +13231,9 @@ function formatTestcaseMemory(value?: number) {
 
 async function fetchSubmissionDetail(id: string | number, includePrivateTests = false) {
   const includeTests = includePrivateTests ? 'all' : 'summary';
-  return mapSubmissionDetail(await cpproApiFetch<Record<string, unknown>>(`/submissions/${encodeURIComponent(String(id))}?includeTests=${includeTests}`));
+  const adminContext = includePrivateTests && isLcojBackendMode() ? '&admin=true' : '';
+  const path = `/submissions/${encodeURIComponent(String(id))}?includeTests=${includeTests}${adminContext}`;
+  return mapSubmissionDetail(await cpproApiFetch<Record<string, unknown>>(path));
 }
 
 async function fetchProblemDetail(id: string | number) {
