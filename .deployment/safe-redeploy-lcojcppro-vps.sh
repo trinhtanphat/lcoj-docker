@@ -11,6 +11,24 @@ compose() {
   docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.override.yml "$@"
 }
 
+smoke_spa() {
+  local path="$1"
+  local output="$2"
+  local attempt
+
+  for attempt in $(seq 1 30); do
+    if curl -fsS --max-time 10 "http://127.0.0.1:${NGINX_PORT:-18083}${path}" >"$output" && \
+      grep -Fq '<div id="root"></div>' "$output"; then
+      echo "OK http://127.0.0.1:${NGINX_PORT:-18083}${path}"
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "SPA smoke failed for ${path}" >&2
+  return 1
+}
+
 ensure_static_libraries() {
   download_asset_archive "https://github.com/trinhtanphat/site-assets/archive/refs/heads/master.tar.gz" \
     "repo/resources/libs" \
@@ -79,9 +97,8 @@ download_asset_archive() {
 
   echo "== smoke =="
   compose ps
-  curl -fsS --max-time 30 http://127.0.0.1:${NGINX_PORT:-18083}/ >/tmp/lcojcppro-home.html
-  grep -q 'cppro-public-shell' /tmp/lcojcppro-home.html
-  echo "OK http://127.0.0.1:${NGINX_PORT:-18083}/"
+  smoke_spa / /tmp/lcojcppro-home.html
+  smoke_spa /management /tmp/lcojcppro-management.html
 
   echo "== finish $(date -Is) =="
   uptime || true

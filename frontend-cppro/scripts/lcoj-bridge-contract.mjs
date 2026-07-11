@@ -8,7 +8,7 @@ const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const forkRoot = path.resolve(appRoot, '..');
 const dmojRoot = path.join(forkRoot, 'dmoj', 'repo');
 
-const [main, build, urls, nginx, bridge, widgets, styles] = await Promise.all([
+const [main, build, urls, nginx, bridge, widgets, styles, deploy] = await Promise.all([
   readFile(path.join(appRoot, 'src', 'main.tsx'), 'utf8'),
   readFile(path.join(appRoot, 'scripts', 'build-lcoj.mjs'), 'utf8'),
   readFile(path.join(dmojRoot, 'dmoj', 'urls.py'), 'utf8'),
@@ -16,6 +16,7 @@ const [main, build, urls, nginx, bridge, widgets, styles] = await Promise.all([
   readFile(path.join(dmojRoot, 'judge', 'views', 'cppro_api.py'), 'utf8'),
   readFile(path.join(dmojRoot, 'judge', 'views', 'widgets.py'), 'utf8'),
   readFile(path.join(appRoot, 'src', 'styles.css'), 'utf8'),
+  readFile(path.join(forkRoot, '.deployment', 'safe-redeploy-lcojcppro-vps.sh'), 'utf8'),
 ]);
 
 assert.match(build, /VITE_CPPRO_DEPLOYMENT:\s*'lcoj'/, 'LCOJ build must enable the signed-session bridge.');
@@ -68,6 +69,9 @@ assert.match(
   /location ~ \^\/\([^)]*management[^)]*\)\(\/\.\*\)\?\$ \{[\s\S]{0,180}try_files \/index\.html @uwsgi;/,
   'Direct /management loads and refreshes must use the CPPro SPA fallback.',
 );
+assert.doesNotMatch(deploy, /cppro-public-shell/, 'Deployment smoke must not depend on a removed static marker.');
+assert.match(deploy, /smoke_spa \/ \/tmp\/lcojcppro-home\.html/, 'Deployment must smoke-test the CPPro root.');
+assert.match(deploy, /smoke_spa \/management \/tmp\/lcojcppro-management\.html/, 'Deployment must smoke-test direct CPPro management loads.');
 assert.match(nginx, /location \^~ \/api\/ \{\s*try_files \$uri @uwsgi;/, 'The authenticated CPPro bridge must be routed directly to Django.');
 assert.match(bridge, /def cppro_auth_me\(request\):/, 'Bridge must expose the current signed-in user.');
 assert.match(bridge, /@ensure_csrf_cookie\s*@require_GET\s*def cppro_auth_me\(request\):/, 'The bridge must issue a Django CSRF cookie before SPA mutations.');
