@@ -63,6 +63,11 @@ assert.ok(
 );
 assert.doesNotMatch(nginx, /\(admin\|management\|api\|accounts\|channels/, 'Localized /management must not be sent to Django.');
 assert.match(nginx, /location ~ \^\/\(vi\|en\)\(\/\.\*\)\?\$/, 'Localized CPPro SPA fallback is required.');
+assert.match(
+  nginx,
+  /location ~ \^\/\([^)]*management[^)]*\)\(\/\.\*\)\?\$ \{[\s\S]{0,180}try_files \/index\.html @uwsgi;/,
+  'Direct /management loads and refreshes must use the CPPro SPA fallback.',
+);
 assert.match(nginx, /location \^~ \/api\/ \{\s*try_files \$uri @uwsgi;/, 'The authenticated CPPro bridge must be routed directly to Django.');
 assert.match(bridge, /def cppro_auth_me\(request\):/, 'Bridge must expose the current signed-in user.');
 assert.match(bridge, /@ensure_csrf_cookie\s*@require_GET\s*def cppro_auth_me\(request\):/, 'The bridge must issue a Django CSRF cookie before SPA mutations.');
