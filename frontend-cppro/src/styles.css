@@ -17813,6 +17813,198 @@ html[data-theme='dark'] .cppro-explore-people dl > div {
   box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.14);
 }
 
+.management-contest-format,
+.management-contest-freeze,
+.management-muted-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  white-space: nowrap;
+  font-size: 0.76rem;
+  font-weight: 950;
+}
+
+.management-contest-format {
+  border: 1px solid rgba(56, 189, 248, 0.34);
+  border-radius: 0.45rem;
+  background: rgba(14, 165, 233, 0.12);
+  color: #7dd3fc;
+  padding: 0.28rem 0.48rem;
+}
+
+.management-contest-freeze {
+  color: #93c5fd;
+}
+
+.management-contest-freeze[data-active='true'] {
+  color: #67e8f9;
+}
+
+.management-muted-value {
+  color: #64748b;
+}
+
+.cppro-management-format-picker {
+  display: grid;
+  gap: 0.68rem;
+  margin-top: 1rem;
+  padding: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, #38bdf8);
+  border-radius: 0.85rem;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--panel) 94%, #0ea5e9), var(--panel));
+}
+
+.cppro-management-format-picker > header {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.cppro-management-format-picker > header > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+
+.cppro-management-format-picker > header > small {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 720;
+  line-height: 1.45;
+}
+
+[data-management-contest-format-cards] {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11.5rem, 1fr));
+  gap: 0.48rem;
+}
+
+[data-management-contest-format-cards] > button {
+  display: grid;
+  min-height: 5.75rem;
+  align-content: start;
+  gap: 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--line) 90%, #64748b);
+  border-radius: 0.68rem;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  color: var(--ink);
+  cursor: pointer;
+  padding: 0.7rem;
+  text-align: left;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease, background 140ms ease;
+}
+
+[data-management-contest-format-cards] > button:hover,
+[data-management-contest-format-cards] > button:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 75%, #38bdf8);
+  box-shadow: 0 7px 18px color-mix(in srgb, var(--primary) 17%, transparent);
+  outline: none;
+  transform: translateY(-1px);
+}
+
+[data-management-contest-format-cards] > button[data-active='true'] {
+  border-color: color-mix(in srgb, var(--primary) 92%, #38bdf8);
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 42%, transparent), 0 7px 18px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+[data-management-contest-format-cards] > button > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+[data-management-contest-format-cards] strong {
+  font-size: 0.82rem;
+  font-weight: 950;
+}
+
+[data-management-contest-format-cards] em {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  color: #0891b2;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 900;
+}
+
+html[data-theme='dark'] [data-management-contest-format-cards] em {
+  color: #67e8f9;
+}
+
+[data-management-contest-format-cards] > button > small {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 680;
+  line-height: 1.42;
+}
+
+.cppro-management-contest-policy {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(99, 179, 237, 0.22);
+}
+
+.cppro-management-contest-policy > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.cppro-management-contest-policy > header > span,
+.cppro-management-contest-policy > small {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.cppro-management-contest-policy > header > span {
+  color: #e0f2fe;
+  font-size: 0.86rem;
+  font-weight: 1000;
+}
+
+.cppro-management-contest-policy > header > em {
+  border: 1px solid rgba(34, 197, 94, 0.34);
+  border-radius: 0.45rem;
+  background: rgba(34, 197, 94, 0.1);
+  color: #86efac;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 1000;
+}
+
+.cppro-management-contest-policy > p,
+.cppro-management-contest-policy > small {
+  margin: 0;
+  color: #94a3b8;
+  line-height: 1.55;
+  font-weight: 750;
+}
+
+.cppro-management-contest-policy > p {
+  font-size: 0.82rem;
+}
+
+.cppro-management-contest-policy > small {
+  color: #a5f3fc;
+  font-size: 0.75rem;
+}
+
+.cppro-management-contest-policy input:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .cppro-management-sample-test {
   display: grid;
   gap: 0.75rem;

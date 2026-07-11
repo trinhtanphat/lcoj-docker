@@ -59,6 +59,18 @@ export type ContestProblem = {
   accepted?: number;
 };
 
+export type ContestParticipant = {
+  id?: number;
+  userId?: number;
+  username: string;
+  fullName: string;
+  avatarUrl?: string | null;
+  joinedAt?: string;
+  participationType?: string;
+  virtual?: number | boolean | null;
+  status?: string | null;
+};
+
 export type Contest = {
   id: number;
   slug: string;
@@ -66,11 +78,23 @@ export type Contest = {
   scope?: string;
   accessType?: string;
   format?: string;
+  formatLabel?: string;
+  formatConfig?: Record<string, unknown>;
+  freezeMinutes?: number;
+  freezeTime?: string;
+  frozen?: boolean;
+  freezeSupported?: boolean;
+  scoreboardVisibility?: 'V' | 'H' | 'C' | 'P' | string;
+  showSubmissionList?: boolean;
   startTime?: string;
   endTime?: string;
   durationMinutes?: number;
   participants: number;
   virtualParticipants: number;
+  participantTotal?: number;
+  participantUsers?: ContestParticipant[];
+  participantUsersAvailable?: boolean;
+  participantUsersTruncated?: boolean;
   problemCount: number;
   status: string;
   description?: string;

@@ -73,6 +73,7 @@ import {
   Shield,
   ShieldCheck,
   SlidersHorizontal,
+  Snowflake,
   Sparkles,
   Star,
   Sun,
@@ -803,6 +804,67 @@ function mapLcojApiLanguage(row: Record<string, unknown>): JudgeLanguage {
   };
 }
 
+async function loadLcojBridgeCpproData(): Promise<CpproData | null> {
+  try {
+    // The CPPro bridge applies native DMOJ visibility, contest-freeze and
+    // organization privacy rules. The broader /api/v2 collections do not.
+    const payload = await cpproApiFetch<Record<string, unknown>>('/data', { timeoutMs: 8000 });
+    const siteSettings = payload.siteSettings && typeof payload.siteSettings === 'object'
+      ? payload.siteSettings
+      : {};
+    const ratingSettings = ratingSettingsFromSiteSettings(siteSettings);
+    const problems = rowsFromApi<Record<string, unknown>>(payload.problems).map(mapBackendProblem);
+    const contests = rowsFromApi<Record<string, unknown>>(payload.contests).map(mapBackendContest);
+    const organizations = rowsFromApi<Record<string, unknown>>(payload.organizations).map(mapBackendOrganization);
+    const users = rowsFromApi<Record<string, unknown>>(payload.users).map((row) => mapBackendUser(row, ratingSettings));
+    const submissions = rowsFromApi<Record<string, unknown>>(payload.submissions).map(mapBackendSubmission);
+    const posts = rowsFromApi<Record<string, unknown>>(payload.posts).map(mapBackendPost);
+    const notifications = rowsFromApi<Record<string, unknown>>(payload.notifications).map(mapBackendPost);
+    const judgeLanguages = rowsFromApi<Record<string, unknown>>(payload.languages)
+      .map(mapBackendJudgeLanguage)
+      .filter((item) => item.code && item.label);
+    const tagsBySlug = new Map<string, Problem['tags'][number]>();
+    problems.forEach((problem) => problem.tags.forEach((tag) => tagsBySlug.set(tag.slug, tag)));
+
+    return normalizeCpproData({
+      generatedAt: String(payload.generatedAt || new Date().toISOString()),
+      source: String(payload.source || 'lcoj-database'),
+      crawlManifest: null,
+      stats: payload.stats && typeof payload.stats === 'object'
+        ? payload.stats as Record<string, number>
+        : emptyStats,
+      problems,
+      problemDetails: Object.fromEntries(problems.flatMap((problem) => [
+        [problem.slug, problem],
+        [String(problem.id), problem],
+      ])),
+      contests,
+      contestDetails: Object.fromEntries(contests.flatMap((contest) => [
+        [contest.slug, contest],
+        [String(contest.id), contest],
+      ])),
+      organizations,
+      users,
+      profiles: Object.fromEntries(users.map((user) => [user.username, user])),
+      submissions,
+      posts,
+      notifications,
+      exams: [],
+      tags: [...tagsBySlug.values()],
+      courses: [],
+      judgeLanguages: judgeLanguages.length ? mergeJudgeLanguages(judgeLanguages) : fallbackJudgeLanguages,
+      homeSummary: normalizeHomeSummary(payload.homeSummary),
+      auth: { googleEnabled: googleOAuthEnabledFromSettings(siteSettings) },
+      contact: contactFromSiteSettings(siteSettings),
+      topbarFeatures: topbarFeaturesFromSiteSettings(siteSettings),
+      ratingSettings,
+      platformFrontendUrl: siteFrontendUrlFromSettings(siteSettings),
+    });
+  } catch {
+    return null;
+  }
+}
+
 async function loadLcojApiCpproData(staticData: CpproData | null): Promise<CpproData | null> {
   const [
     problemsPayload,
@@ -1306,6 +1368,25 @@ function mapBackendContest(row: Record<string, unknown>): Contest {
   const myParticipant = row.myParticipant && typeof row.myParticipant === 'object'
     ? row.myParticipant as Contest['myParticipant']
     : null;
+  const participantUsers = Array.isArray(row.participant_users)
+    ? row.participant_users
+      .filter((item) => item && typeof item === 'object')
+      .map((item) => {
+        const participant = item as Record<string, unknown>;
+        const username = String(participant.username || 'user');
+        return {
+          id: Number(participant.id ?? 0) || undefined,
+          userId: Number(participant.user_id ?? participant.userId ?? 0) || undefined,
+          username,
+          fullName: String(participant.full_name ?? participant.fullName ?? username),
+          avatarUrl: participant.avatar_url || participant.avatarUrl ? String(participant.avatar_url || participant.avatarUrl) : null,
+          joinedAt: String(participant.joined_at ?? participant.started_at ?? participant.joinedAt ?? ''),
+          participationType: String(participant.participation_type ?? participant.participationType ?? ''),
+          virtual: participant.virtual === null || participant.virtual === undefined ? null : Boolean(participant.virtual),
+          status: participant.status ? String(participant.status) : null,
+        };
+      })
+    : undefined;
   return {
     id: Number(row.id ?? 0) || 0,
     slug,
@@ -1313,11 +1394,27 @@ function mapBackendContest(row: Record<string, unknown>): Contest {
     scope: String(row.visibility || row.scope || 'public'),
     accessType: String(row.access_type || row.accessType || row.visibility || 'open'),
     format: String(row.format || 'contest'),
+    formatLabel: String(row.format_label || row.formatLabel || row.format || 'Contest'),
+    formatConfig: row.format_config && typeof row.format_config === 'object'
+      ? row.format_config as Record<string, unknown>
+      : row.formatConfig && typeof row.formatConfig === 'object'
+        ? row.formatConfig as Record<string, unknown>
+        : {},
+    freezeMinutes: Math.max(0, Number(row.freeze_minutes ?? row.freezeMinutes ?? 0) || 0),
+    freezeTime: String(row.freeze_time ?? row.freezeTime ?? '').trim() || undefined,
+    frozen: Boolean(row.frozen),
+    freezeSupported: Boolean(row.freeze_supported ?? row.freezeSupported),
+    scoreboardVisibility: String(row.scoreboard_visibility ?? row.scoreboardVisibility ?? 'V'),
+    showSubmissionList: Boolean(row.show_submission_list ?? row.showSubmissionList),
     startTime: String(row.start_time || row.startTime || ''),
     endTime: String(row.end_time || row.endTime || ''),
     durationMinutes: Number(row.duration_minutes ?? row.durationMinutes ?? 0) || undefined,
     participants: Number(row.participant_count ?? row.participants ?? 0) || 0,
     virtualParticipants: Number(row.virtual_participants ?? row.virtualParticipants ?? 0) || 0,
+    participantTotal: Number(row.participant_total ?? row.participantTotal ?? row.participant_count ?? row.participants ?? 0) || 0,
+    participantUsers,
+    participantUsersAvailable: Boolean(row.participant_users_available ?? row.participantUsersAvailable),
+    participantUsersTruncated: Boolean(row.participant_users_truncated ?? row.participantUsersTruncated),
     problemCount: Number(row.problem_count ?? row.problemCount ?? problems?.length ?? 0) || 0,
     status: String(row.phase || row.status || row.configured_status || 'draft'),
     description: String(row.description || '').trim() || undefined,
@@ -1709,9 +1806,10 @@ function mapBackendPost(row: Record<string, unknown>): HomePost {
 
 async function loadBackendCpproData(): Promise<CpproData> {
   if (isLcojBackendMode()) {
-    // Real LCOJ database only, via /api/v2. No crawl fallback: if the backend is
-    // unreachable we render an empty site rather than stale oj.cppro.vn data.
-    return await loadLcojApiCpproData(null) || normalizeCpproData(emptyCpproData);
+    // Real LCOJ database only, through the privacy-aware CPPro bridge. No crawl
+    // or broad API v2 fallback: an honest empty state is safer than stale or
+    // over-broad data.
+    return await loadLcojBridgeCpproData() || normalizeCpproData(emptyCpproData);
   }
   if (shouldUseStaticCpproData()) {
     const staticData = await loadStaticCpproData();
@@ -5025,6 +5123,10 @@ function managementDatasetForSection(
       columns: [
         { key: 'title', label: 'Contest', render: (row: Contest) => <strong>{row.title}</strong> },
         { key: 'status', label: 'Status', render: (row: Contest) => <span className="management-status">{row.status}</span> },
+        { key: 'format', label: 'Format', render: (row: Contest) => <span className="management-contest-format">{row.formatLabel || row.format || 'Default'}</span> },
+        { key: 'freeze', label: 'Freeze', render: (row: Contest) => row.freezeMinutes
+          ? <span className="management-contest-freeze" data-active={row.frozen ? 'true' : 'false'}><Snowflake size={13} />{row.freezeMinutes} min</span>
+          : <span className="management-muted-value">Off</span> },
         { key: 'participants', label: 'Users', align: 'right', render: (row: Contest) => Number(row.participants || 0).toLocaleString('vi-VN') },
         { key: 'problems', label: 'Problems', align: 'right', render: (row: Contest) => Number(row.problemCount || 0).toLocaleString('vi-VN') },
         { key: 'time', label: 'Time', render: (row: Contest) => formatRange(row.startTime, row.endTime) },
@@ -9437,6 +9539,35 @@ function managementProblemIdList(value: unknown) {
   }).filter((id) => Number.isInteger(id) && id > 0)));
 }
 
+type ManagementContestFormat = 'DEFAULT' | 'ICPC' | 'IOI' | 'IOI_LEGACY' | 'ATCODER' | 'ECOO' | 'VNOJ';
+type ManagementScoreboardVisibility = 'V' | 'H' | 'C' | 'P';
+
+const managementContestFormats: Array<{
+  value: ManagementContestFormat;
+  label: string;
+  description: string;
+  freeze: boolean;
+}> = [
+  { value: 'DEFAULT', label: 'Default', description: 'Điểm cao nhất, xếp hạng theo điểm và thời gian.', freeze: false },
+  { value: 'ICPC', label: 'ICPC', description: 'Xếp hạng theo số bài AC, thời gian và penalty.', freeze: true },
+  { value: 'IOI', label: 'IOI (2016+)', description: 'Chấm điểm từng bài, hỗ trợ điểm từng subtask.', freeze: false },
+  { value: 'IOI_LEGACY', label: 'IOI legacy', description: 'Thể thức IOI trước 2016 với tùy chọn lần nộp làm đổi điểm cuối.', freeze: false },
+  { value: 'ATCODER', label: 'AtCoder', description: 'Tổng điểm và penalty theo số lần nộp sai.', freeze: false },
+  { value: 'ECOO', label: 'ECOO', description: 'Điểm, thưởng first AC và thưởng thời gian.', freeze: false },
+  { value: 'VNOJ', label: 'VNOJ', description: 'Điểm theo submission cùng penalty và tùy chọn LSO.', freeze: true },
+];
+
+function managementContestFormatValue(value: unknown): ManagementContestFormat {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'icpc') return 'ICPC';
+  if (normalized === 'ioi16' || normalized === 'ioi-2016') return 'IOI';
+  if (normalized === 'ioi' || normalized === 'legacy-ioi' || normalized === 'ioi_legacy') return 'IOI_LEGACY';
+  if (normalized === 'atcoder') return 'ATCODER';
+  if (normalized === 'ecoo') return 'ECOO';
+  if (normalized === 'vnoj') return 'VNOJ';
+  return 'DEFAULT';
+}
+
 type ManagementContestDraft = {
   externalId: string;
   title: string;
@@ -9444,10 +9575,19 @@ type ManagementContestDraft = {
   startTime: string;
   endTime: string;
   status: 'draft' | 'upcoming' | 'live' | 'finished';
-  format: 'ICPC' | 'IOI' | 'ATCODER';
+  format: ManagementContestFormat;
   visibility: 'public' | 'private' | 'organization';
   allowVirtual: boolean;
   isRated: boolean;
+  freezeMinutes: number;
+  scoreboardVisibility: ManagementScoreboardVisibility;
+  showSubmissionList: boolean;
+  penaltyMinutes: number;
+  cumtime: boolean;
+  firstAcBonus: number;
+  timeBonus: number;
+  lastScoreAltering: boolean;
+  lso: boolean;
   problemIds: number[];
   allowedLanguages: string[];
 };
@@ -9463,6 +9603,15 @@ const emptyManagementContestDraft: ManagementContestDraft = {
   visibility: 'public',
   allowVirtual: false,
   isRated: false,
+  freezeMinutes: 0,
+  scoreboardVisibility: 'V',
+  showSubmissionList: true,
+  penaltyMinutes: 20,
+  cumtime: false,
+  firstAcBonus: 10,
+  timeBonus: 5,
+  lastScoreAltering: false,
+  lso: false,
   problemIds: [],
   allowedLanguages: [],
 };
@@ -9503,6 +9652,14 @@ function ManagementContestForm({
   const patch = <K extends keyof ManagementContestDraft>(key: K, value: ManagementContestDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));
   };
+  const selectedFormat = managementContestFormats.find((item) => item.value === draft.format) || managementContestFormats[0];
+  const changeContestFormat = (format: ManagementContestFormat) => {
+    setDraft((current) => ({
+      ...current,
+      format,
+      freezeMinutes: managementContestFormats.find((item) => item.value === format)?.freeze ? current.freezeMinutes : 0,
+    }));
+  };
 
   useEffect(() => {
     if (!editing) {
@@ -9516,7 +9673,7 @@ function ManagementContestForm({
       .then((row) => {
         if (cancelled) return;
         const status = String(row.status || 'draft').toLowerCase();
-        const format = String(row.format || 'IOI').toUpperCase();
+        const format = managementContestFormatValue(row.format || 'default');
         const visibility = String(row.visibility || 'public').toLowerCase();
         const formatConfig = managementContestFormatConfig(row.format_config ?? row.formatConfig);
         setDraft({
@@ -9526,10 +9683,21 @@ function ManagementContestForm({
           startTime: toManagementDateTimeLocal(row.start_time ?? row.startTime),
           endTime: toManagementDateTimeLocal(row.end_time ?? row.endTime),
           status: ['upcoming', 'live', 'finished'].includes(status) ? status as ManagementContestDraft['status'] : 'draft',
-          format: ['ICPC', 'ATCODER'].includes(format) ? format as ManagementContestDraft['format'] : 'IOI',
+          format,
           visibility: ['private', 'organization'].includes(visibility) ? visibility as ManagementContestDraft['visibility'] : 'public',
           allowVirtual: Boolean(row.allow_virtual ?? row.allowVirtual),
           isRated: Boolean(row.is_rated ?? row.isRated),
+          freezeMinutes: Math.max(0, Number(row.freeze_minutes ?? row.freezeMinutes ?? 0) || 0),
+          scoreboardVisibility: ['V', 'H', 'C', 'P'].includes(String(row.scoreboard_visibility ?? row.scoreboardVisibility ?? 'V').toUpperCase())
+            ? String(row.scoreboard_visibility ?? row.scoreboardVisibility ?? 'V').toUpperCase() as ManagementScoreboardVisibility
+            : 'V',
+          showSubmissionList: Boolean(row.show_submission_list ?? row.showSubmissionList),
+          penaltyMinutes: Math.max(0, Number(formatConfig.penalty ?? formatConfig.penaltyMinutes ?? 20) || 0),
+          cumtime: Boolean(formatConfig.cumtime),
+          firstAcBonus: Math.max(0, Number(formatConfig.first_ac_bonus ?? formatConfig.firstAcBonus ?? 10) || 0),
+          timeBonus: Math.max(0, Number(formatConfig.time_bonus ?? formatConfig.timeBonus ?? 5) || 0),
+          lastScoreAltering: Boolean(formatConfig.last_score_altering ?? formatConfig.lastScoreAltering),
+          lso: Boolean(formatConfig.LSO ?? formatConfig.lso),
           problemIds: managementProblemIdList(row.problems ?? row.problem_ids ?? row.problemIds),
           allowedLanguages: normalizeStringList(formatConfig.allowedLanguages ?? formatConfig.allowed_languages, []),
         });
@@ -9583,6 +9751,17 @@ function ManagementContestForm({
           visibility: draft.visibility,
           allowVirtual: draft.allowVirtual,
           isRated: draft.isRated,
+          freezeMinutes: draft.freezeMinutes,
+          scoreboardVisibility: draft.scoreboardVisibility,
+          showSubmissionList: draft.showSubmissionList,
+          scoringConfig: {
+            penaltyMinutes: draft.penaltyMinutes,
+            cumtime: draft.cumtime,
+            firstAcBonus: draft.firstAcBonus,
+            timeBonus: draft.timeBonus,
+            lastScoreAltering: draft.lastScoreAltering,
+            lso: draft.lso,
+          },
           formatConfig: {
             allowedLanguages: draft.allowedLanguages,
           },
@@ -9610,11 +9789,57 @@ function ManagementContestForm({
             <label><span>{mt('Start time')}</span><input type="datetime-local" value={draft.startTime} onChange={(event) => patch('startTime', event.currentTarget.value)} /></label>
             <label><span>{mt('End time')}</span><input type="datetime-local" value={draft.endTime} onChange={(event) => patch('endTime', event.currentTarget.value)} /></label>
             <label><span>{mt('Status')}</span><select value={draft.status} onChange={(event) => patch('status', event.currentTarget.value as ManagementContestDraft['status'])}><option value="draft">{mt('Draft')}</option><option value="upcoming">{mt('Upcoming')}</option><option value="live">{mt('Live')}</option><option value="finished">{mt('Finished')}</option></select></label>
-            <label><span>{mt('Format')}</span><select value={draft.format} onChange={(event) => patch('format', event.currentTarget.value as ManagementContestDraft['format'])}><option>IOI</option><option>ICPC</option><option>ATCODER</option></select></label>
+            <label><span>{mt('Format')}</span><select data-management-contest-format value={draft.format} onChange={(event) => changeContestFormat(event.currentTarget.value as ManagementContestFormat)}>{managementContestFormats.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
             <label><span>{mt('Visibility')}</span><select value={draft.visibility} onChange={(event) => patch('visibility', event.currentTarget.value as ManagementContestDraft['visibility'])}><option value="public">{mt('Public')}</option><option value="private">{mt('Private')}</option><option value="organization">{mt('Organization')}</option></select></label>
             <label className="cppro-management-check-field"><input type="checkbox" checked={draft.allowVirtual} onChange={(event) => patch('allowVirtual', event.currentTarget.checked)} /><span>{mt('Allow virtual participation')}</span></label>
             <label className="cppro-management-check-field"><input type="checkbox" checked={draft.isRated} onChange={(event) => patch('isRated', event.currentTarget.checked)} /><span>{mt('Rated contest')}</span></label>
           </div>
+          <section className="cppro-management-format-picker" aria-label={mt('Format')}>
+            <header>
+              <span><Gauge size={16} />{mt('Choose scoring format')}</span>
+              <small>{mt('The selected format controls scoring, penalty, and scoreboard options below.')}</small>
+            </header>
+            <div data-management-contest-format-cards>
+              {managementContestFormats.map((item) => {
+                const active = item.value === draft.format;
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    data-active={active ? 'true' : 'false'}
+                    data-freeze={item.freeze ? 'true' : 'false'}
+                    aria-pressed={active}
+                    onClick={() => changeContestFormat(item.value)}
+                  >
+                    <span>
+                      <strong>{item.label}</strong>
+                      {item.freeze ? <em><Snowflake size={12} />{mt('Freeze')}</em> : null}
+                    </span>
+                    <small>{item.description}</small>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+          <section className="cppro-management-contest-policy" data-management-contest-policy>
+            <header>
+              <span><Gauge size={17} />{mt('Scoring and scoreboard')}</span>
+              <em>{selectedFormat.label}</em>
+            </header>
+            <p>{selectedFormat.description}</p>
+            <div className="cppro-management-fields two-columns">
+              {['ICPC', 'ATCODER', 'VNOJ'].includes(draft.format) ? <label><span>{mt('Wrong submission penalty (minutes)')}</span><input type="number" min={0} max={360} value={draft.penaltyMinutes} onChange={(event) => patch('penaltyMinutes', Math.max(0, Number(event.currentTarget.value) || 0))} /></label> : null}
+              {['IOI', 'IOI_LEGACY', 'ECOO'].includes(draft.format) ? <label className="cppro-management-check-field"><input type="checkbox" checked={draft.cumtime} onChange={(event) => patch('cumtime', event.currentTarget.checked)} /><span>{mt('Use cumulative time as tiebreaker')}</span></label> : null}
+              {draft.format === 'ECOO' ? <label><span>{mt('First AC bonus')}</span><input type="number" min={0} max={10000} value={draft.firstAcBonus} onChange={(event) => patch('firstAcBonus', Math.max(0, Number(event.currentTarget.value) || 0))} /></label> : null}
+              {draft.format === 'ECOO' ? <label><span>{mt('Time bonus')}</span><input type="number" min={0} max={10000} value={draft.timeBonus} onChange={(event) => patch('timeBonus', Math.max(0, Number(event.currentTarget.value) || 0))} /></label> : null}
+              {draft.format === 'IOI_LEGACY' ? <label className="cppro-management-check-field"><input type="checkbox" checked={draft.lastScoreAltering} onChange={(event) => patch('lastScoreAltering', event.currentTarget.checked)} /><span>{mt('Last score-altering submission wins')}</span></label> : null}
+              {draft.format === 'VNOJ' ? <label className="cppro-management-check-field"><input type="checkbox" checked={draft.lso} onChange={(event) => patch('lso', event.currentTarget.checked)} /><span>{mt('Enable last submission optimization')}</span></label> : null}
+              <label><span>{mt('Freeze last minutes')}</span><input data-management-contest-freeze type="number" min={0} value={draft.freezeMinutes} disabled={!selectedFormat.freeze} onChange={(event) => patch('freezeMinutes', Math.max(0, Number(event.currentTarget.value) || 0))} /></label>
+              <label><span>{mt('Scoreboard visibility')}</span><select value={draft.scoreboardVisibility} onChange={(event) => patch('scoreboardVisibility', event.currentTarget.value as ManagementScoreboardVisibility)}><option value="V">{mt('Always visible')}</option><option value="H">{mt('Always hidden')}</option><option value="C">{mt('Hidden during contest')}</option><option value="P">{mt('Hidden during participation')}</option></select></label>
+              <label className="cppro-management-check-field"><input type="checkbox" checked={draft.showSubmissionList} onChange={(event) => patch('showSubmissionList', event.currentTarget.checked)} /><span>{mt('Show contest submission list')}</span></label>
+            </div>
+            <small><Snowflake size={13} />{selectedFormat.freeze ? mt('Freeze hides submissions made after the cutoff from contestants; administrators still see the full board.') : mt('LCOJ supports frozen snapshots for ICPC and VNOJ formats.')}</small>
+          </section>
           <label className="cppro-management-field-wide"><span>{mt('Description')}</span><textarea rows={10} value={draft.description} onChange={(event) => patch('description', event.currentTarget.value)} /></label>
         </section>
         <aside className="cppro-management-form-card">
@@ -13889,7 +14114,7 @@ function SubmissionDetailPage({ id, data, go, currentUser }: { id: string; data:
                       ) : null}
                     </div>
                     <em>{testcaseScoreLabel(test)}</em>
-                    <small>{typeof test.runtime === 'number' ? `${test.runtime} ms` : 'Runtime -'} · {formatTestcaseMemory(test.memory)}</small>
+                    <small>{typeof test.runtime === 'number' ? formatSubmissionRuntime(test.runtime) : 'Runtime -'} · {formatTestcaseMemory(test.memory)}</small>
                   </article>
                 )) : (
                   <article>
@@ -13931,9 +14156,11 @@ function SubmissionDetailPage({ id, data, go, currentUser }: { id: string; data:
 }
 
 function formatSubmissionRuntime(value: number) {
-  if (!value) return '0 ms';
-  if (value >= 1000) return `${(value / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}s`;
-  return `${value} ms`;
+  if (!Number.isFinite(value) || value <= 0) return '0,00 ms';
+  if (value >= 1000) {
+    return `${(value / 1000).toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} s`;
+  }
+  return `${value.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ms`;
 }
 
 function formatSubmissionMemory(value: number) {
@@ -14492,7 +14719,7 @@ function SubmissionListRow({
         </em>
       </span>
       <span data-submission-row-resource>
-        <b>{item.timeMs ? `${(item.timeMs / 1000).toLocaleString('vi-VN', { maximumFractionDigits: 2 })}s` : '---'}</b>
+        <b>{item.timeMs ? `${(item.timeMs / 1000).toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}s` : '---'}</b>
         <small>{item.memoryKb ? `${(item.memoryKb / 1024).toLocaleString('vi-VN', { maximumFractionDigits: 2 })} MB` : '---'}</small>
       </span>
     </button>

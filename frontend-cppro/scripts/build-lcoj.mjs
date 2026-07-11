@@ -19,14 +19,26 @@ const child = spawn(command, args, {
   stdio: 'inherit',
 });
 
-// The LCOJ build is backed by the real LCOJ database over /api/v2. The crawled
+// The LCOJ build is backed by the privacy-aware /api/cppro/data bridge. The crawled
 // oj.cppro.vn snapshot (dist/data, dist/manifests) is stale foreign data and must
-// never be shipped: if it is on disk, nginx serves it and the SPA can fall back to it.
+// never be shipped: if it is on disk, nginx can still serve it directly.
 const crawlArtifacts = ['data', 'manifests'];
 
 async function stripCrawlArtifacts() {
   for (const entry of crawlArtifacts) {
     await fs.rm(path.join(distDir, entry), { recursive: true, force: true });
+  }
+}
+
+async function assertNoCrawlArtifacts(root) {
+  for (const entry of crawlArtifacts) {
+    try {
+      await fs.access(path.join(root, entry));
+    } catch (error) {
+      if (error?.code === 'ENOENT') continue;
+      throw error;
+    }
+    throw new Error(`Crawl artifact survived the LCOJ build: ${path.join(root, entry)}`);
   }
 }
 
@@ -47,8 +59,10 @@ child.on('exit', async (code, signal) => {
   }
   try {
     await stripCrawlArtifacts();
+    await assertNoCrawlArtifacts(distDir);
     console.log(`Stripped crawl artifacts (${crawlArtifacts.join(', ')}) from ${distDir}`);
     await syncRuntimeStatic();
+    await assertNoCrawlArtifacts(runtimeDir);
     console.log(`Synced LCOJ runtime frontend to ${runtimeDir}`);
     process.exit(0);
   } catch (error) {
