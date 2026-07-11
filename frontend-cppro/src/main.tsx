@@ -213,7 +213,10 @@ function isLcojBackendMode() {
 }
 
 function shouldUseLcojLegacyRoutes() {
-  return shouldUseStaticCpproData() || isLcojBackendMode();
+  // LCOJ is the authenticated backend for the CPPro application, not an
+  // alternate public frontend. Keep legacy navigation only for the offline
+  // static preview where there is no CPPro API to serve the route.
+  return shouldUseStaticCpproData();
 }
 
 type CpproFetchInit = RequestInit & { timeoutMs?: number };
@@ -2257,14 +2260,36 @@ function readStoredLocale(): CpproLocale {
   return browserLanguage.startsWith('vi') ? 'vi' : 'en';
 }
 
+function normalizeCpproPublicPath(pathname: string) {
+  const cleanPath = (pathname || '/').replace(/\/+$/, '') || '/';
+  const authAlias = cleanPath.match(/^\/accounts\/(login|register|logout)$/);
+  if (authAlias) return `/${authAlias[1]}`;
+
+  const legacyAlias = cleanPath.match(/^\/(problem|contest|user|organization|submission)(\/.*)?$/);
+  if (!legacyAlias) return cleanPath;
+  const canonicalByLegacyRoute: Record<string, string> = {
+    problem: 'problems',
+    contest: 'contests',
+    user: 'users',
+    organization: 'organizations',
+    submission: 'submission',
+  };
+  const canonical = canonicalByLegacyRoute[legacyAlias[1]];
+  return `/${canonical}${legacyAlias[2] || ''}`;
+}
+
+function isCpproPublicAuthAlias(pathname: string) {
+  return /^\/accounts\/(login|register|logout)\/?$/.test(pathname || '');
+}
+
 function parseCpproPath(pathname: string) {
   const segments = pathname.split('/').filter(Boolean);
   const first = segments[0]?.toLowerCase();
   if (isCpproLocale(first)) {
     const route = `/${segments.slice(1).join('/')}`.replace(/\/$/, '');
-    return { locale: first, path: route === '' ? '/' : route };
+    return { locale: first, path: normalizeCpproPublicPath(route === '' ? '/' : route) };
   }
-  return { locale: readStoredLocale(), path: pathname || '/' };
+  return { locale: readStoredLocale(), path: normalizeCpproPublicPath(pathname || '/') };
 }
 
 function hasCpproLocalePrefix(pathname: string) {
@@ -2277,7 +2302,8 @@ function isLcojReservedPath(pathname: string) {
 
 function withCpproLocale(locale: CpproLocale, nextPath: string) {
   const cleanPath = nextPath.startsWith('/') ? nextPath : `/${nextPath}`;
-  const normalized = cleanPath === '/vi' || cleanPath === '/en' ? '/' : cleanPath.replace(/^\/(vi|en)(?=\/|$)/, '') || '/';
+  const withoutLocale = cleanPath === '/vi' || cleanPath === '/en' ? '/' : cleanPath.replace(/^\/(vi|en)(?=\/|$)/, '') || '/';
+  const normalized = normalizeCpproPublicPath(withoutLocale);
   return normalized === '/' ? `/${locale}` : `/${locale}${normalized}`;
 }
 
@@ -2691,7 +2717,9 @@ function App() {
   const [data, setData] = useState<CpproData>(() => normalizeCpproData(emptyCpproData));
   const [routeState, setRouteState] = useState(() => parseCpproPath(window.location.pathname));
   const [theme, setTheme] = useState<ThemeMode>(readStoredTheme);
-  const [currentUser, setCurrentUser] = useState<StoredCpproUser | null>(() => shouldUseLcojLegacyRoutes() ? null : readStoredCpproUser());
+  // The LCOJ browser session is authoritative. Do not render a privileged
+  // menu from stale or forged local storage while /auth/me is still loading.
+  const [currentUser, setCurrentUser] = useState<StoredCpproUser | null>(() => isLcojBackendMode() ? null : readStoredCpproUser());
   const [dataLoading, setDataLoading] = useState(true);
   const { locale, path } = routeState;
 
@@ -2797,7 +2825,8 @@ function App() {
 
   useEffect(() => {
     if (hasCpproLocalePrefix(window.location.pathname)) return;
-    if (shouldUseLcojLegacyRoutes() && isLcojReservedPath(window.location.pathname)) return;
+    if (isCpproPublicAuthAlias(window.location.pathname)) return;
+    if (shouldUseStaticCpproData() && isLcojReservedPath(window.location.pathname)) return;
     const nextLocation = withCpproLocale(routeState.locale, window.location.pathname || '/');
     window.history.replaceState({}, '', `${nextLocation}${window.location.search}${window.location.hash}`);
     setRouteState(parseCpproPath(new URL(nextLocation, window.location.origin).pathname));
@@ -2859,6 +2888,29 @@ function App() {
     }
   };
 
+  const logout = async () => {
+    if (isLcojBackendMode()) {
+      // Keep Django's session and the CPPro client state in sync. The bridge
+      // bootstraps and submits Django's CSRF token for us.
+      await cpproApiFetch('/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }).catch(() => null);
+    }
+    localStorage.removeItem('cppro_user');
+    localStorage.removeItem('cppro_access_token');
+    localStorage.removeItem('cppro_refresh_token');
+    localStorage.removeItem('oj_platform_user');
+    localStorage.removeItem('oj_platform_token');
+    clearPlatformBridgeSession();
+    setCurrentUser(null);
+    go('/login');
+  };
+
+  if (path === '/logout') {
+    return <CpproLogoutPage onLogout={logout} brandName={data.contact.brandName || defaultFooterContactSettings.brandName} />;
+  }
+
   const authMode = path === '/login' ? 'login' : path === '/register' ? 'register' : null;
   if (authMode) {
     return (
@@ -2900,20 +2952,7 @@ function App() {
         currentUser={currentUser}
         notifications={data.notifications}
         platformFrontendUrl={data.platformFrontendUrl}
-        onLogout={() => {
-          if (shouldUseLcojLegacyRoutes()) {
-            openLcojLegacyPath('/accounts/logout/');
-            return;
-          }
-          localStorage.removeItem('cppro_user');
-          localStorage.removeItem('cppro_access_token');
-          localStorage.removeItem('cppro_refresh_token');
-          localStorage.removeItem('oj_platform_user');
-          localStorage.removeItem('oj_platform_token');
-          clearPlatformBridgeSession();
-          setCurrentUser(null);
-          go(authPathWithReturn('login'));
-        }}
+        onLogout={logout}
       />
       <main className="page-wrap">
         <Router path={path} data={data} go={go} currentUser={currentUser} onAuth={handleAuth} onUserUpdate={handleUserUpdate} dataLoading={dataLoading} />
@@ -3088,7 +3127,7 @@ function Topbar({
   currentUser: StoredCpproUser | null;
   notifications: HomePost[];
   platformFrontendUrl?: string | null;
-  onLogout: () => void;
+  onLogout: () => void | Promise<void>;
 }) {
   const topUser = currentUser ? storedUserToRow(currentUser) : null;
   const [userOpen, setUserOpen] = useState(false);
@@ -3140,7 +3179,7 @@ function Topbar({
     setUserOpen(false);
     setNavMenuOpen(false);
     setNotificationOpen(false);
-    if (shouldUseLcojLegacyRoutes()) {
+    if (isLcojBackendMode()) {
       openLcojLegacyPath('/admin/');
       return;
     }
@@ -3156,7 +3195,7 @@ function Topbar({
     .filter(Boolean)
     .map((role) => String(role).toLowerCase());
   const lcojLegacyRoutes = shouldUseLcojLegacyRoutes();
-  const lcojStaffManager = lcojLegacyRoutes && (Boolean(currentUser?.is_teacher) || adminRoles.some((role) => (
+  const lcojStaffManager = isLcojBackendMode() && (Boolean(currentUser?.is_teacher) || adminRoles.some((role) => (
     role === 'teacher'
     || role === 'staff'
     || role.includes('teacher')
@@ -3485,16 +3524,16 @@ function Topbar({
                     </div>
                   </div>
                 ) : null}
-                <button type="button" role="menuitem" data-logout-action onClick={onLogout}><LogOut size={16} />{t(locale, 'user.logout')}</button>
+                <button type="button" role="menuitem" data-logout-action onClick={() => void onLogout()}><LogOut size={16} />{t(locale, 'user.logout')}</button>
               </div>
             </div>
           ) : (
             <>
-                <button className="ghost-login" onClick={() => lcojLegacyRoutes ? openLcojLegacyPath('/accounts/login/') : go(authPathWithReturn('login'))} type="button">
+                <button className="ghost-login" onClick={() => go(authPathWithReturn('login'))} type="button">
                 <LogIn size={17} />
                 Đăng nhập
               </button>
-              <button className="primary-login" onClick={() => lcojLegacyRoutes ? openLcojLegacyPath('/accounts/register/') : go('/register')} type="button">
+              <button className="primary-login" onClick={() => go('/register')} type="button">
                 <CircleUserRound size={17} />
                 Đăng ký
               </button>
@@ -3715,7 +3754,7 @@ function isCpproAdminUser(user: StoredCpproUser | null | undefined) {
     ...(Array.isArray(user?.roles) ? user.roles : []),
     ...(Array.isArray(user?.tags) ? user.tags : []),
   ].filter(Boolean).map((role) => String(role).toLowerCase());
-  const lcojStaffManager = shouldUseLcojLegacyRoutes() && (Boolean(user?.is_teacher) || roles.some((role) => (
+  const lcojStaffManager = isLcojBackendMode() && (Boolean(user?.is_teacher) || roles.some((role) => (
     role === 'teacher'
     || role === 'staff'
     || role.includes('teacher')
@@ -16711,7 +16750,7 @@ function ExplorePage({
             <strong>{isEnglish ? 'Crawl snapshot' : 'Snapshot crawl'}</strong>
             <dl>
               <div><dt>{isEnglish ? 'Source' : 'Nguồn'}</dt><dd>https://lqdoj.edu.vn/theme/</dd></div>
-              <div><dt>{isEnglish ? 'Final URL' : 'URL cuối'}</dt><dd>/accounts/login/?next=/theme/</dd></div>
+              <div><dt>{isEnglish ? 'Final URL' : 'URL cuối'}</dt><dd>/login?next=/theme/</dd></div>
               <div><dt>{isEnglish ? 'Status' : 'Trạng thái'}</dt><dd>{isEnglish ? 'Login required' : 'Cần đăng nhập'}</dd></div>
               <div><dt>{isEnglish ? 'Saved in crawl branch' : 'Đã lưu ở branch crawl'}</dt><dd>cloned_site/lqdoj.edu.vn/theme</dd></div>
             </dl>
@@ -17263,6 +17302,33 @@ function activeBillingHeading() {
   return 'Theo dõi học phí và đăng ký';
 }
 
+function CpproLogoutPage({
+  onLogout,
+  brandName = defaultFooterContactSettings.brandName,
+}: {
+  onLogout: () => Promise<void>;
+  brandName?: string;
+}) {
+  useEffect(() => {
+    void onLogout();
+  }, [onLogout]);
+
+  return (
+    <div className="judge-type-scale auth-shell-crawl">
+      <div className="relative w-full min-h-screen flex flex-col transition-colors">
+        <CpproBackdrop brandName={brandName} />
+        <div className="relative z-10 flex-1 flex items-center justify-center px-4 py-10">
+          <div className="auth-card w-full max-w-[440px] bg-white dark:bg-slate-800 rounded-[16px] border-2 border-[#1A2B4C] dark:border-slate-600 shadow-[0_4px_0_0_#1A2B4C] dark:shadow-[0_4px_0_0_#1e293b] p-8 text-center">
+            <Loader2 className="mx-auto mb-3 animate-spin text-[#1890FF]" size={28} />
+            <h1 className="text-xl font-black text-[#1A2B4C] dark:text-white">Đang đăng xuất</h1>
+            <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">Đang kết thúc phiên làm việc an toàn…</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AuthPreviewCrawl({
   mode,
   go,
@@ -17282,6 +17348,8 @@ function AuthPreviewCrawl({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorRequired, setTwoFactorRequired] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [notice, setNotice] = useState('');
@@ -17309,10 +17377,6 @@ function AuthPreviewCrawl({
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (shouldUseLcojLegacyRoutes()) {
-      openLcojLegacyPath(isLogin ? '/accounts/login/' : '/accounts/register/');
-      return;
-    }
     setNotice('');
     setError('');
     setSubmitting(true);
@@ -17320,9 +17384,14 @@ function AuthPreviewCrawl({
       if (isLogin) {
         const result = await cpproApiFetch<{ user?: AuthUser; token?: string; twoFactorRequired?: boolean; message?: string }>('/auth/login', {
           method: 'POST',
-          body: JSON.stringify({ username: username.trim(), password }),
+          body: JSON.stringify({ username: username.trim(), password, twoFactorCode: twoFactorCode.trim() }),
         });
-        if (result.twoFactorRequired || !result.user || !result.token) {
+        if (result.twoFactorRequired) {
+          setTwoFactorRequired(true);
+          setNotice(result.message || 'Nhập mã xác thực hai lớp để tiếp tục.');
+          return;
+        }
+        if (!result.user || !result.token) {
           throw new Error(result.message || 'Two-factor code is required for this account.');
         }
         const storedUser = saveCpproSession(result.token, result.user);
@@ -17405,6 +17474,27 @@ function AuthPreviewCrawl({
               />
             </div>
           </div>
+
+          {isLogin && twoFactorRequired && (
+            <div data-auth-two-factor>
+              <label htmlFor="login-two-factor" className={labelClass}>Mã xác thực hai lớp</label>
+              <div className="relative">
+                <ShieldCheck className={iconClass} />
+                <input
+                  id="login-two-factor"
+                  autoComplete="one-time-code"
+                  className={inputClass}
+                  inputMode="numeric"
+                  maxLength={64}
+                  onChange={(event) => setTwoFactorCode(event.target.value)}
+                  placeholder="Mã ứng dụng hoặc mã khôi phục"
+                  required
+                  type="text"
+                  value={twoFactorCode}
+                />
+              </div>
+            </div>
+          )}
 
           {!isLogin && (
             <>
@@ -17513,7 +17603,7 @@ function AuthPreviewCrawl({
             className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-[#1890FF] text-white rounded-[12px] font-black text-sm shadow-[0_4px_0_0_#0050B3] hover:bg-[#096DD9] hover:-translate-y-[2px] hover:shadow-[0_4px_0_0_#0050B3] active:translate-y-[4px] active:shadow-none transition-all disabled:opacity-60 disabled:pointer-events-none"
           >
             <LogIn className="w-4.5 h-4.5" />
-            {submitting ? 'Đang xử lý...' : isLogin ? 'Đăng nhập' : 'Tạo tài khoản'}
+            {submitting ? 'Đang xử lý...' : isLogin ? (twoFactorRequired ? 'Xác thực và đăng nhập' : 'Đăng nhập') : 'Tạo tài khoản'}
           </button>
 
           {isLogin && (
@@ -18491,7 +18581,7 @@ function Footer({ contact: initialContact }: { contact: FooterContactSettings })
               <a href="/posts">Thông báo</a>
               <a href="/status">Trạng thái</a>
               <a href="/runtimes">Ngôn ngữ</a>
-              <a href="/accounts/login/">Đăng nhập</a>
+              <a href="/login">Đăng nhập</a>
             </section>
           </>
         ) : (

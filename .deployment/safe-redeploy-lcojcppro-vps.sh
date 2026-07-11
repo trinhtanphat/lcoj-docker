@@ -17,7 +17,7 @@ smoke_spa() {
   local attempt
 
   for attempt in $(seq 1 30); do
-    if curl -fsS --max-time 10 "http://127.0.0.1:${NGINX_PORT:-18083}${path}" >"$output" && \
+    if curl -fsSL --max-time 10 "http://127.0.0.1:${NGINX_PORT:-18083}${path}" >"$output" && \
       grep -Fq '<div id="root"></div>' "$output"; then
       echo "OK http://127.0.0.1:${NGINX_PORT:-18083}${path}"
       return 0
@@ -99,6 +99,9 @@ download_asset_archive() {
   compose ps
   smoke_spa / /tmp/lcojcppro-home.html
   smoke_spa /management /tmp/lcojcppro-management.html
+  smoke_spa /accounts/login/ /tmp/lcojcppro-login.html
+  smoke_spa /accounts/register/ /tmp/lcojcppro-register.html
+  smoke_spa /accounts/logout/ /tmp/lcojcppro-logout.html
 
   echo "== finish $(date -Is) =="
   uptime || true
