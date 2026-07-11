@@ -17,6 +17,8 @@ function occurrences(value, pattern) {
 
 assert.equal(occurrences(main, /data-admin-dmoj-action="true"/g), 1, 'Render exactly one DMOJ Admin action.');
 assert.equal(occurrences(main, /data-admin-management-action="true"/g), 1, 'Render exactly one CPPro Management action.');
+assert.match(main, /'admin\.dmoj': 'Quản trị DMOJ'/, 'The Vietnamese DMOJ row must be explicit.');
+assert.match(main, /'admin\.cppro': 'Quản trị CPPro'/, 'The Vietnamese CPPro row must be explicit.');
 assert.match(
   main,
   /data-admin-dmoj-action="true"[\s\S]{0,180}onClick=\{openLegacyAdminRoute\}[\s\S]{0,180}admin\.dmoj/,
