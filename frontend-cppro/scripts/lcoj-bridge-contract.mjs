@@ -50,6 +50,11 @@ assert.match(main, /async function fetchSubmissionDetail\([\s\S]{0,420}includePr
 assert.doesNotMatch(main, /CPPRO management shows saved LCOJ testcases read-only/, 'LCOJ editing must not disable testcase ZIP replacement.');
 assert.match(main, /const visibleTestCases = draft\.testCases/, 'Create and edit problem forms must share the testcase editor state.');
 assert.match(main, /const patchSampleTestcase = \(field: 'input' \| 'output', value: string\)/, 'An existing problem must allow its sample testcase to be edited.');
+assert.match(main, /data-signed-source-submit-streak[\s\S]*data-submit-streak-main[\s\S]*data-submit-streak-divider[\s\S]*data-submit-streak-max/, 'The submit streak card must retain current, divider, and record sections in order.');
+assert.match(styles, /\[data-signed-source-submit-streak\]\s*\{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\) 1px minmax\(0, 1fr\) !important/, 'The current submit streak must occupy the upper half and the record the lower half.');
+assert.match(styles, /\[data-signed-source-submit-streak\] \[data-submit-streak-main\]\s*\{[\s\S]*grid-area:\s*main/, 'The current submit streak must be pinned above the divider.');
+assert.match(styles, /\[data-signed-source-submit-streak\] \[data-submit-streak-divider\]\s*\{[\s\S]*grid-area:\s*divider/, 'The streak divider must stay between both halves.');
+assert.match(styles, /\[data-signed-source-submit-streak\] \[data-submit-streak-max\]\s*\{[\s\S]*grid-area:\s*max/, 'The max submit streak must be pinned below the divider.');
 
 for (const route of [
   "path('api/cppro/auth/me', cppro_api.cppro_auth_me)",

@@ -21438,3 +21438,69 @@ html[data-theme='dark'] .cppro-management-record-list code {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Keep the submit streak in two legible halves. Earlier crawl-era rules made
+   this card a horizontal flex row, which placed the current streak beside the
+   record instead of above it. Pin its three direct visual pieces to explicit
+   grid tracks so utility classes and responsive overrides cannot rearrange
+   their order. */
+[data-signed-source-submit-streak] {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) 1px minmax(0, 1fr) !important;
+  grid-template-areas:
+    'main'
+    'divider'
+    'max' !important;
+  align-content: stretch !important;
+  justify-content: stretch !important;
+  place-items: stretch center !important;
+  gap: 0 !important;
+  min-height: 204px !important;
+  padding: 14px 16px !important;
+  text-align: center !important;
+}
+
+[data-signed-source-submit-streak] [data-submit-streak-main],
+[data-signed-source-submit-streak] [data-submit-streak-max] {
+  display: grid !important;
+  min-width: 0;
+  min-height: 0;
+  align-content: center !important;
+  justify-items: center !important;
+  gap: 3px !important;
+}
+
+[data-signed-source-submit-streak] [data-submit-streak-main] {
+  grid-area: main;
+  order: initial;
+}
+
+[data-signed-source-submit-streak] [data-submit-streak-divider] {
+  grid-area: divider;
+  order: initial;
+  display: block !important;
+  align-self: center;
+  justify-self: center;
+  width: min(130px, 82%) !important;
+  height: 1px !important;
+  margin: 0 !important;
+  border-radius: 999px !important;
+  background: color-mix(in srgb, var(--muted) 34%, transparent) !important;
+}
+
+[data-signed-source-submit-streak] [data-submit-streak-max] {
+  grid-area: max;
+  order: initial;
+}
+
+@media (max-width: 720px) {
+  [data-signed-source-submit-streak] {
+    min-height: 180px !important;
+    padding: 12px !important;
+  }
+
+  [data-signed-source-submit-streak] [data-submit-streak-divider] {
+    width: min(112px, 74%) !important;
+  }
+}
