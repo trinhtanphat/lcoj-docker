@@ -4227,6 +4227,7 @@ const managementViText: Record<string, string> = {
   Refresh: 'Làm mới',
   Reset: 'Đặt lại',
   'Badge setup': 'Cài đặt huy hiệu',
+  'Delete all badges': 'Xóa toàn bộ huy hiệu',
   'Edit badge': 'Sửa huy hiệu',
   'Save badge': 'Lưu huy hiệu',
   'Add badge': 'Thêm huy hiệu',
@@ -7424,27 +7425,8 @@ function ManagementBadgeSetupPanel({ locale }: { locale: CpproLocale }) {
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [message, setMessage] = useState('');
-  const presets = [
-    { tone: 'admin', title: 'Admin', meta: 'role = admin', icon: <ShieldCheck size={18} /> },
-    { tone: 'teacher', title: 'Teacher', meta: 'isTeacher = true', icon: <GraduationCap size={18} /> },
-    { tone: 'ultra', title: 'ULTRA', meta: 'membershipTier = ultra', icon: <Sparkles size={18} /> },
-    { tone: 'ultra-max', title: 'ULTRA MAX', meta: 'membershipTier = ultra_max', icon: <Crown size={18} /> },
-    { tone: 'streak', title: 'Streak', meta: 'accepted-day streak', icon: <Flame size={18} /> },
-  ];
-  const previewUser: UserRow = {
-    username: 'badge-preview',
-    fullName: 'Badge Preview',
-    rating: 0,
-    score: 0,
-    solved: 0,
-    streak: 12,
-    maxStreak: 21,
-    rankName: 'Admin',
-    tags: ['Admin', 'Teacher', 'ULTRA'],
-    proTier: 'ULTRA',
-    badges: ['Admin', 'Teacher', 'ULTRA'],
-  };
   const loadBadges = () => {
     setLoading(true);
     setMessage('');
@@ -7527,22 +7509,31 @@ function ManagementBadgeSetupPanel({ locale }: { locale: CpproLocale }) {
       setMessage(error instanceof Error ? error.message : 'Could not delete badge.');
     }
   };
+  const deleteAllBadges = async () => {
+    if (clearing || !badges.length) return;
+    if (!window.confirm(`Delete all ${badges.length.toLocaleString('vi-VN')} database badge(s)? This also removes every assignment.`)) return;
+    setClearing(true);
+    setMessage('');
+    try {
+      await cpproApiFetch('/admin/badges', { method: 'DELETE' });
+      setBadges([]);
+      resetDraft();
+      setMessage('All database badges were deleted.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not delete all badges.');
+    } finally {
+      setClearing(false);
+    }
+  };
   return (
     <section className="cppro-management-badge-setup" data-management-badge-setup>
       <header>
         <span><Medal size={18} />{mt('Badge setup')}</span>
-        <UserBadges user={previewUser} />
-        <button className="soft-button" type="button" disabled={loading} onClick={loadBadges}><Loader2 size={14} />{mt('Refresh')}</button>
+        <div>
+          <button className="soft-button" type="button" disabled={loading || clearing} onClick={loadBadges}><Loader2 size={14} />{mt('Refresh')}</button>
+          <button className="management-danger-action" type="button" disabled={loading || clearing || !badges.length} onClick={() => void deleteAllBadges()}><X size={14} />{clearing ? mt('Deleting...') : mt('Delete all badges')}</button>
+        </div>
       </header>
-      <div data-management-badge-presets>
-        {presets.map((preset) => (
-          <article key={preset.tone} data-badge-tone={preset.tone}>
-            <span>{preset.icon}</span>
-            <strong>{preset.title}</strong>
-            <small>{preset.meta}</small>
-          </article>
-        ))}
-      </div>
       <div className="cppro-management-badge-crud" data-management-badge-crud>
         <section>
           <h3>{editingId ? mt('Edit badge') : mt('Create badge')}</h3>
@@ -9000,9 +8991,10 @@ function ManagementProblemForm({
   const [exportingPackage, setExportingPackage] = useState(false);
   const [testcaseZipMode, setTestcaseZipMode] = useState<'append' | 'replace'>('append');
   const [packageSummary, setPackageSummary] = useState('');
-  const [existingTestCases, setExistingTestCases] = useState<ManagementProblemTestCase[]>([]);
+  const [, setExistingTestCases] = useState<ManagementProblemTestCase[]>([]);
   const [existingTestCasesLoading, setExistingTestCasesLoading] = useState(editing);
   const [existingTestCasesError, setExistingTestCasesError] = useState('');
+  const [testcaseDirty, setTestcaseDirty] = useState(false);
   const packageInputRef = useRef<HTMLInputElement | null>(null);
   const testcaseZipInputRef = useRef<HTMLInputElement | null>(null);
   const statementAssetInputRef = useRef<HTMLInputElement | null>(null);
@@ -9017,6 +9009,7 @@ function ManagementProblemForm({
       setExistingTestCases([]);
       setExistingTestCasesLoading(false);
       setExistingTestCasesError('');
+      setTestcaseDirty(false);
       setLoading(false);
       return;
     }
@@ -9025,6 +9018,7 @@ function ManagementProblemForm({
     setExistingTestCases([]);
     setExistingTestCasesError('');
     setExistingTestCasesLoading(true);
+    setTestcaseDirty(false);
     cpproApiFetch<Record<string, unknown>>(`/problems/${encodeURIComponent(routeId)}`)
       .then(async (row) => {
         if (cancelled) return;
@@ -9063,7 +9057,15 @@ function ManagementProblemForm({
         try {
           const testCasePayload = await cpproApiFetch<unknown>(`/problems/${encodeURIComponent(problemId)}/testcases`);
           if (!cancelled) {
-            setExistingTestCases(normalizeManagementProblemTestCases(rowsFromApi<Record<string, unknown>>(testCasePayload)));
+            const testCases = normalizeManagementProblemTestCases(rowsFromApi<Record<string, unknown>>(testCasePayload));
+            const firstSample = testCases.find((testCase) => testCase.isSample) || testCases[0];
+            setExistingTestCases(testCases);
+            setDraft((current) => ({
+              ...current,
+              testCases,
+              sampleInput: firstSample?.input ?? '',
+              sampleOutput: firstSample ? String(firstSample.output ?? firstSample.outputs?.[0] ?? '') : '',
+            }));
           }
         } catch (error) {
           if (!cancelled) {
@@ -9092,6 +9094,29 @@ function ManagementProblemForm({
     patch('allowedLanguages', draft.allowedLanguages.includes(code)
       ? draft.allowedLanguages.filter((item) => item !== code)
       : [...draft.allowedLanguages, code]);
+  };
+
+  const patchSampleTestcase = (field: 'input' | 'output', value: string) => {
+    setDraft((current) => {
+      const sampleIndex = current.testCases.findIndex((testCase) => testCase.isSample);
+      const targetIndex = sampleIndex >= 0 ? sampleIndex : 0;
+      const currentSample = current.testCases[targetIndex] || {
+        input: current.sampleInput,
+        output: current.sampleOutput,
+        isSample: true,
+      };
+      const nextSample = { ...currentSample, [field]: value, isSample: true };
+      const testCases = current.testCases.length
+        ? current.testCases.map((testCase, index) => index === targetIndex ? nextSample : testCase)
+        : [nextSample];
+      return {
+        ...current,
+        testCases,
+        sampleInput: field === 'input' ? value : current.sampleInput,
+        sampleOutput: field === 'output' ? value : current.sampleOutput,
+      };
+    });
+    setTestcaseDirty(true);
   };
 
   const importInlineAsset = async (file: File, kind: 'statement' | 'attachment') => {
@@ -9186,6 +9211,7 @@ function ManagementProblemForm({
         adminAttachmentData: String(imported.adminAttachmentData ?? imported.admin_attachment_data ?? current.adminAttachmentData ?? '') || null,
         adminAttachmentSize: Number(imported.adminAttachmentSize ?? imported.admin_attachment_size ?? current.adminAttachmentSize ?? 0) || null,
       }));
+      setTestcaseDirty(true);
       const savedCount = Number(testSummary.savedCount ?? testSummary.submittedCount ?? tests.length) || tests.length;
       const sampleCount = Number(testSummary.sampleCount ?? tests.filter((item) => item.isSample).length) || tests.filter((item) => item.isSample).length;
       setPackageSummary(`Loaded ${savedCount.toLocaleString('vi-VN')} testcase(s), ${sampleCount.toLocaleString('vi-VN')} sample(s) from ${file.name}.`);
@@ -9207,7 +9233,9 @@ function ManagementProblemForm({
       const headers = new Headers();
       const token = localStorage.getItem('oj_platform_token') || localStorage.getItem('cppro_access_token');
       if (token) headers.set('Authorization', `Bearer ${token}`);
-      const response = await fetch(`${cpproApiBase()}/problems/${encodeURIComponent(routeId)}/package.zip`, { headers });
+      const path = `/problems/${encodeURIComponent(routeId)}/package.zip`;
+      const endpoint = isLcojBackendMode() ? `/api/cppro${path}` : `${cpproApiBase()}${path}`;
+      const response = await fetch(endpoint, { headers, credentials: 'same-origin' });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.error || payload?.message || `Download failed with ${response.status}`);
@@ -9236,13 +9264,6 @@ function ManagementProblemForm({
       onToast({ tone: 'error', text: 'Upload a .zip testcase archive.' });
       return;
     }
-    if (editing && isLcojBackendMode()) {
-      onToast({
-        tone: 'info',
-        text: 'CPPRO management shows saved LCOJ testcases read-only. Use the DMOJ Testcases editor to replace the archive.',
-      });
-      return;
-    }
     setImportingTests(true);
     setPackageSummary(`Importing testcase ZIP ${file.name}...`);
     try {
@@ -9260,11 +9281,19 @@ function ManagementProblemForm({
         const importedCount = Number(imported.importedCount ?? imported.imported_count ?? 0) || 0;
         const totalCount = Number(imported.totalCount ?? imported.total_count ?? importedCount) || importedCount;
         const duplicatesSkipped = Number(imported.duplicatesSkipped ?? imported.duplicates_skipped ?? 0) || 0;
-        setDraft((current) => ({ ...current, testCases: [] }));
         setExistingTestCasesLoading(true);
         void cpproApiFetch<unknown>(`/problems/${encodeURIComponent(routeId)}/testcases`)
           .then((testCasePayload) => {
-            setExistingTestCases(normalizeManagementProblemTestCases(rowsFromApi<Record<string, unknown>>(testCasePayload)));
+            const testCases = normalizeManagementProblemTestCases(rowsFromApi<Record<string, unknown>>(testCasePayload));
+            const firstSample = testCases.find((testCase) => testCase.isSample) || testCases[0];
+            setExistingTestCases(testCases);
+            setDraft((current) => ({
+              ...current,
+              testCases,
+              sampleInput: firstSample?.input ?? '',
+              sampleOutput: firstSample ? String(firstSample.output ?? firstSample.outputs?.[0] ?? '') : '',
+            }));
+            setTestcaseDirty(false);
             setExistingTestCasesError('');
           })
           .catch((error) => {
@@ -9299,6 +9328,7 @@ function ManagementProblemForm({
         sampleInput: firstSample?.input ?? current.sampleInput,
         sampleOutput: firstSample ? String(firstSample.output ?? firstSample.outputs?.[0] ?? '') : current.sampleOutput,
       }));
+      setTestcaseDirty(true);
       setPackageSummary(
         `${testcaseZipMode === 'replace' ? 'Loaded' : 'Added'} ${tests.length.toLocaleString('vi-VN')} testcase(s); `
         + `${merged.length.toLocaleString('vi-VN')} testcase(s) ready.`
@@ -9358,7 +9388,9 @@ function ManagementProblemForm({
         adminAttachmentType: draft.adminAttachmentType || undefined,
         adminAttachmentData: draft.adminAttachmentData || undefined,
         adminAttachmentSize: draft.adminAttachmentSize || undefined,
-        ...(!editing ? { testCases: draft.testCases.length ? draft.testCases : fallbackTestCases } : draft.testCases.length ? { testCases: draft.testCases } : {}),
+        ...(!editing
+          ? { testCases: draft.testCases.length ? draft.testCases : fallbackTestCases }
+          : testcaseDirty && draft.testCases.length ? { testCases: draft.testCases } : {}),
       };
       await cpproApiFetch(editing ? `/problems/${encodeURIComponent(routeId)}` : '/problems', {
         method: editing ? 'PUT' : 'POST',
@@ -9375,7 +9407,7 @@ function ManagementProblemForm({
   };
 
   if (loading) return <DataLoadingPanel label="Loading problem editor" rows={7} />;
-  const visibleTestCases = editing ? existingTestCases : draft.testCases;
+  const visibleTestCases = draft.testCases;
   return (
     <section className="cppro-management-subpage" data-management-subpage="problem">
       <div className="cppro-management-form-grid">
@@ -9517,25 +9549,23 @@ function ManagementProblemForm({
               </button>
             ))}
           </div>
-          {!editing ? (
-            <div className="cppro-management-sample-test">
-              <label><span>{draft.testCases.length ? 'First sample input from package' : 'Sample input'}</span><textarea rows={5} value={draft.sampleInput} onChange={(event) => patch('sampleInput', event.currentTarget.value)} /></label>
-              <label><span>{draft.testCases.length ? 'First sample output from package' : 'Sample output'}</span><textarea rows={5} value={draft.sampleOutput} onChange={(event) => patch('sampleOutput', event.currentTarget.value)} /></label>
-            </div>
-          ) : null}
+          <div className="cppro-management-sample-test">
+            <label><span>{draft.testCases.length ? 'First sample input from package' : 'Sample input'}</span><textarea rows={5} value={draft.sampleInput} onChange={(event) => patchSampleTestcase('input', event.currentTarget.value)} /></label>
+            <label><span>{draft.testCases.length ? 'First sample output from package' : 'Sample output'}</span><textarea rows={5} value={draft.sampleOutput} onChange={(event) => patchSampleTestcase('output', event.currentTarget.value)} /></label>
+          </div>
           <div className="cppro-management-package-summary" data-management-problem-testcase-summary>
             <ListChecks size={16} />
             <span>
-              <strong>{existingTestCasesLoading ? 'Loading protected testcase details…' : visibleTestCases.length ? `${visibleTestCases.length.toLocaleString('vi-VN')} testcase(s) available` : editing ? 'No saved testcase found' : 'Manual sample testcase mode'}</strong>
-              <small>{editing ? 'Saved testcase data is read-only here; use the testcase ZIP workflow to append or replace it.' : visibleTestCases.length ? `${visibleTestCases.filter((item) => item.isSample).length.toLocaleString('vi-VN')} sample testcase(s) will be saved.` : 'Upload a ZIP package to import many testcase files at once.'}</small>
+              <strong>{existingTestCasesLoading ? 'Loading testcase details…' : visibleTestCases.length ? `${visibleTestCases.length.toLocaleString('vi-VN')} testcase(s) available` : 'Manual sample testcase mode'}</strong>
+              <small>{visibleTestCases.length ? `${visibleTestCases.filter((item) => item.isSample).length.toLocaleString('vi-VN')} sample testcase(s) will be saved.` : 'Upload a ZIP package to import many testcase files at once.'}</small>
             </span>
           </div>
           {existingTestCasesError ? <p className="service-message">{existingTestCasesError}</p> : null}
-          {editing && existingTestCases.length ? (
+          {visibleTestCases.length ? (
             <details className="cppro-management-existing-testcases" data-management-existing-testcases>
-              <summary><Eye size={16} />View saved testcase details ({existingTestCases.length.toLocaleString('vi-VN')})</summary>
+              <summary><Eye size={16} />View testcase details ({visibleTestCases.length.toLocaleString('vi-VN')})</summary>
               <div className="cppro-management-existing-testcase-list">
-                {existingTestCases.map((testCase, index) => (
+                {visibleTestCases.map((testCase, index) => (
                   <article key={`${index}-${testCase.input.slice(0, 32)}`}>
                     <header><strong>Test #{index + 1}</strong>{testCase.isSample ? <span>Sample</span> : <span>Private</span>}</header>
                     <div>
@@ -11745,31 +11775,11 @@ function SidebarNoticeCard({ notice, go }: { notice: HomePost; go: (path: string
 }
 
 function userBadgeLabels(user: UserRow) {
-  const tags = [...(user.badges || []), ...(user.tags || []), user.rankName, user.proTier, user.username].map((tag) => String(tag || '').trim()).filter(Boolean);
-  const labels = new Set<string>();
-  tags.forEach((tag) => {
-    const normalized = tag.toLowerCase();
-    if (normalized.includes('admin')) {
-      labels.add('Admin');
-      labels.add('Staff');
-    } else if (normalized.includes('teacher') || normalized.includes('mentor') || normalized.includes('giảng')) {
-      labels.add('Teacher');
-    } else if (normalized.includes('moderator') || normalized.includes('staff')) {
-      labels.add('Staff');
-    } else if ((normalized.includes('ultra') && normalized.includes('max')) || normalized.includes('ultramax') || normalized.includes('ultra_max')) {
-      labels.add('ULTRA MAX');
-    } else if (normalized.includes('ultra')) {
-      labels.add('ULTRA');
-    } else if (normalized.includes('pro')) {
-      labels.add('PRO');
-    }
-  });
-  if ((user.streak || 0) > 0) labels.add(`Streak ${user.streak}`);
-  if ((user.maxStreak || 0) > (user.streak || 0)) labels.add(`Best ${user.maxStreak}`);
-  if ((user.rating || 0) > 0) labels.add(`${Math.round(user.rating)} rating`);
-  if ((user.solved || 0) > 0) labels.add(`${user.solved} solved`);
-  if (!labels.size) labels.add('Member');
-  return [...labels].slice(0, 6);
+  // Only badges explicitly created and assigned by a CPPro administrator are
+  // shown here. Roles, streaks and ratings remain profile data, not badges.
+  return Array.from(new Set(
+    (user.badges || []).map((badge) => String(badge || '').trim()).filter(Boolean),
+  )).slice(0, 6);
 }
 
 function streakTone(value: number) {
@@ -13401,21 +13411,16 @@ function testcaseRowsForSubmission(detail: SubmissionDetail): ParsedTestResult[]
   }
   const tests = Array.isArray(detail.testCases) ? detail.testCases : [];
   if (tests.length > 0) {
-    const mapped: ParsedTestResult[] = tests.map((test, index) => {
-      const verdict = String(test.verdict || test.status || 'NOT_RUN').toUpperCase();
-      const runtime = Number(test.runtime);
-      const memory = Number(test.memory);
-      return {
-        index: index + 1,
-        caseId: Number(test.id ?? 0) || undefined,
-        verdict,
-        runtime: Number.isFinite(runtime) ? runtime : undefined,
-        memory: Number.isFinite(memory) ? memory : undefined,
-        message: String(test.is_sample ? 'Sample testcase' : `Test #${index + 1}`),
-        input: typeof test.input === 'string' ? test.input : undefined,
-        expected: typeof test.output === 'string' ? test.output : undefined,
-      };
-    });
+    const mapped: ParsedTestResult[] = tests.map((test, index) => normalizeParsedTestResult({
+      ...test,
+      index: Number(test.index) || index + 1,
+      case_id: test.case_id ?? test.caseId ?? test.id,
+      verdict: String(test.verdict || test.status || 'NOT_RUN'),
+      message: typeof test.message === 'string' && test.message.trim()
+        ? test.message
+        : String(test.is_sample ? 'Sample testcase' : `Test #${index + 1}`),
+      expected: test.expected ?? test.output,
+    }));
     if (count > mapped.length && !isFinalVerdict(detail.verdict)) {
       for (let index = mapped.length; index < Math.min(count, cap || count); index += 1) {
         mapped.push({ index: index + 1, caseId: undefined, verdict: 'PENDING', runtime: undefined, memory: undefined, message: 'Waiting for judge progress', input: undefined, expected: undefined });

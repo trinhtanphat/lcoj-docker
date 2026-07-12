@@ -47,6 +47,9 @@ assert.match(main, /if \(parts\[0\] === 'management'\) \{[\s\S]{0,240}<CpproMana
 assert.match(main, /function managementPrimaryReadEndpoint\(section: ManagementSectionKey\) \{[\s\S]{0,180}isLcojBackendMode\(\)[\s\S]{0,100}\/admin\/management\/\$\{section\}/, 'The CPPro management page must use bridge endpoints in LCOJ mode.');
 assert.match(main, /openLcojLegacyPath\('\/admin\/'\)/, 'DMOJ admin must remain a hard legacy navigation.');
 assert.match(main, /async function fetchSubmissionDetail\([\s\S]{0,420}includePrivateTests && isLcojBackendMode\(\) \? '&admin=true'/, 'LCOJ managers must request the server-verified admin testcase context.');
+assert.doesNotMatch(main, /CPPRO management shows saved LCOJ testcases read-only/, 'LCOJ editing must not disable testcase ZIP replacement.');
+assert.match(main, /const visibleTestCases = draft\.testCases/, 'Create and edit problem forms must share the testcase editor state.');
+assert.match(main, /const patchSampleTestcase = \(field: 'input' \| 'output', value: string\)/, 'An existing problem must allow its sample testcase to be edited.');
 
 for (const route of [
   "path('api/cppro/auth/me', cppro_api.cppro_auth_me)",
@@ -57,6 +60,15 @@ for (const route of [
   assert.ok(urls.includes(route), `Missing LCOJ bridge route: ${route}`);
 }
 assert.match(urls, /path\(\s*'api\/cppro\/problems\/<str:identifier>\/testcases',/, 'Missing protected testcase route.');
+for (const route of [
+  "path('api/cppro/problems/package/inspect', cppro_api.cppro_problem_package_inspect)",
+  "path('api/cppro/problems/<str:identifier>/package.zip', cppro_api.cppro_problem_package_download)",
+  "path('api/cppro/problems/<str:identifier>/testcases/import', cppro_api.cppro_problem_testcase_import)",
+  "path('api/cppro/submissions/verification-challenge', cppro_api.cppro_submission_verification_challenge)",
+  "path('api/cppro/admin/badges', cppro_api.cppro_admin_management, {'section': 'badges'})",
+]) {
+  assert.ok(urls.includes(route), `Missing LCOJ management API route: ${route}`);
+}
 assert.ok(
   urls.indexOf("'api/cppro/problems/<str:identifier>/testcases'")
     < urls.indexOf("path('api/cppro/problems/<str:identifier>', cppro_api.cppro_problems)"),
@@ -94,6 +106,14 @@ for (const mutation of [
 }
 assert.match(bridge, /def _can_manage_problem\(request_user, problem\):/, 'Bridge testcase access must use a server permission boundary.');
 assert.match(bridge, /def cppro_problem_admin\(request, identifier, action\):/, 'Bridge must serve protected testcase management data.');
+assert.match(bridge, /def cppro_problem_testcase_import\(request, identifier\):/, 'Bridge must import testcase ZIPs for an existing problem.');
+assert.match(bridge, /def cppro_problem_package_inspect\(request\):/, 'Bridge must inspect full problem packages before saving.');
+assert.match(bridge, /def cppro_problem_package_download\(request, identifier\):/, 'Bridge must export the current problem package.');
+assert.match(bridge, /def cppro_submission_verification_challenge\(request\):/, 'Bridge must issue server-side submission challenges.');
+assert.match(bridge, /def _consume_submission_verification\(/, 'Bridge must validate a submitted challenge server-side.');
+assert.match(bridge, /verification_error = _consume_submission_verification\(request, profile, payload\)/, 'Submissions must consume a one-time server-side challenge.');
+assert.match(bridge, /def _problem_testcase_material_rows\(problem\):/, 'Problem managers must receive protected testcase source material.');
+assert.match(bridge, /def _submission_problem_testcase_materials\(problem\):/, 'Submission detail must map manager testcase material into judge rows.');
 assert.match(bridge, /def _visible_contests_for_user\(user\):[\s\S]{0,320}Contest\.get_visible_contests\(user\)/, 'Public contest routes must use DMOJ private-contest visibility rules.');
 assert.match(bridge, /def _visible_submission_queryset\(user\):[\s\S]{0,900}Problem\.get_visible_problems\(user\)/, 'Public submission rows must use DMOJ problem visibility rules.');
 assert.match(bridge, /def _visible_submission_queryset\(user\):[\s\S]{0,1400}_visible_contests_for_user\(user\)[\s\S]{0,240}can_see_full_submission_list\(user\)/, 'Submission rows must also honor native contest submission-list visibility.');
