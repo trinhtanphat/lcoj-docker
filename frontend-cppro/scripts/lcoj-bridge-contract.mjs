@@ -8,7 +8,7 @@ const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const forkRoot = path.resolve(appRoot, '..');
 const dmojRoot = path.join(forkRoot, 'dmoj', 'repo');
 
-const [main, build, urls, nginx, bridge, widgets, styles, deploy] = await Promise.all([
+const [main, build, urls, nginx, bridge, widgets, styles, deploy, settings, compose] = await Promise.all([
   readFile(path.join(appRoot, 'src', 'main.tsx'), 'utf8'),
   readFile(path.join(appRoot, 'scripts', 'build-lcoj.mjs'), 'utf8'),
   readFile(path.join(dmojRoot, 'dmoj', 'urls.py'), 'utf8'),
@@ -17,6 +17,8 @@ const [main, build, urls, nginx, bridge, widgets, styles, deploy] = await Promis
   readFile(path.join(dmojRoot, 'judge', 'views', 'widgets.py'), 'utf8'),
   readFile(path.join(appRoot, 'src', 'styles.css'), 'utf8'),
   readFile(path.join(forkRoot, '.deployment', 'safe-redeploy-lcojcppro-vps.sh'), 'utf8'),
+  readFile(path.join(dmojRoot, 'dmoj', 'settings.py'), 'utf8'),
+  readFile(path.join(forkRoot, 'dmoj', 'docker-compose.yml'), 'utf8'),
 ]);
 
 assert.match(build, /VITE_CPPRO_DEPLOYMENT:\s*'lcoj'/, 'LCOJ build must enable the signed-session bridge.');
@@ -50,11 +52,37 @@ assert.match(main, /async function fetchSubmissionDetail\([\s\S]{0,420}includePr
 assert.doesNotMatch(main, /CPPRO management shows saved LCOJ testcases read-only/, 'LCOJ editing must not disable testcase ZIP replacement.');
 assert.match(main, /const visibleTestCases = draft\.testCases/, 'Create and edit problem forms must share the testcase editor state.');
 assert.match(main, /const patchSampleTestcase = \(field: 'input' \| 'output', value: string\)/, 'An existing problem must allow its sample testcase to be edited.');
+assert.match(main, /function managementProblemTestcasePreviewRows\(value: unknown\): ManagementProblemTestcasePreview\[\]/, 'Problem editing needs a lightweight testcase preview mapper.');
+assert.match(main, /setTestcasePreviewRows\(managementProblemTestcasePreviewRows\(imported\.testcases\)\)/, 'An uploaded testcase ZIP must populate the table directly from the import response.');
+assert.match(main, /setTestcasePreviewRows\(managementProblemTestcasePreviewRows\(imported\.testcases\)\);[\s\S]{0,220}setTestcaseDraftHydrated\(false\);[\s\S]{0,260}testCases:\s*\[\]/, 'A persisted ZIP import must invalidate and clear the stale full-content testcase draft.');
+assert.match(main, /editing && !testcaseDraftHydrated[\s\S]{0,80}return;/, 'Sample editing must be blocked while only lightweight testcase previews are available.');
+assert.match(main, /testcaseDraftHydrated && testcaseDirty && draft\.testCases\.length\s*\?\s*\{ testCases: draft\.testCases \}/, 'Saving problem metadata must never replace persisted testcases from a preview-only draft.');
+assert.match(main, /disabled=\{testcaseSampleEditingDisabled\}/, 'The sample editors must visibly disable stale testcase-content editing after ZIP import.');
+assert.match(main, /data-management-testcase-table/, 'The problem editor must expose a visible testcase table after upload.');
+assert.doesNotMatch(main, /void cpproApiFetch<unknown>\(`\/problems\/\$\{encodeURIComponent\(routeId\)\}\/testcases`\)/, 'Testcase ZIP import must not trigger a second full-content preview request.');
+assert.match(styles, /\.cppro-management-testcase-table[\s\S]{0,1800}table-layout:\s*fixed/, 'The testcase table must constrain large ZIP previews.');
+assert.match(main, /const managementDedicatedProblemEditorSection: ManagementSectionKey = 'problems';/, 'Problem rows must declare the dedicated problem editor workflow.');
+assert.match(main, /const usesDedicatedProblemEditor = section === managementDedicatedProblemEditorSection;/, 'The management table must identify problem rows that use the dedicated editor.');
+assert.match(main, /if \(\(usesDedicatedProblemEditor \|\| !inlineEditable\) && onOpenRow\?\.\(visibleRow\)\) return;/, 'Editing a problem row must open the full problem form instead of the generic row drawer.');
+assert.match(main, /timeLimit: Number\(row\.timeLimitMs \?\? row\.time_limit_ms \?\? row\.timeLimit \?\? row\.time_limit \?\? 1000\)/, 'Problem editing must prefer the bridge milliseconds field over legacy seconds.');
+assert.match(main, /memoryLimit: Number\(row\.memoryLimitMb \?\? row\.memory_limit_mb \?\? row\.memoryLimit \?\? row\.memory_limit \?\? 256\)/, 'Problem editing must prefer the bridge megabytes field over legacy kilobytes.');
 assert.match(main, /data-signed-source-submit-streak[\s\S]*data-submit-streak-main[\s\S]*data-submit-streak-divider[\s\S]*data-submit-streak-max/, 'The submit streak card must retain current, divider, and record sections in order.');
 assert.match(styles, /\[data-signed-source-submit-streak\]\s*\{[\s\S]*grid-template-rows:\s*minmax\(0, 1fr\) 1px minmax\(0, 1fr\) !important/, 'The current submit streak must occupy the upper half and the record the lower half.');
 assert.match(styles, /\[data-signed-source-submit-streak\] \[data-submit-streak-main\]\s*\{[\s\S]*grid-area:\s*main/, 'The current submit streak must be pinned above the divider.');
 assert.match(styles, /\[data-signed-source-submit-streak\] \[data-submit-streak-divider\]\s*\{[\s\S]*grid-area:\s*divider/, 'The streak divider must stay between both halves.');
 assert.match(styles, /\[data-signed-source-submit-streak\] \[data-submit-streak-max\]\s*\{[\s\S]*grid-area:\s*max/, 'The max submit streak must be pinned below the divider.');
+assert.doesNotMatch(main, /className="grid place-items-center streak-widget" data-signed-source-submit-streak/, 'The submit streak must not keep conflicting grid utility classes.');
+assert.match(styles, /\[data-signed-source-submit-streak\] > \[data-submit-streak-main\]\s*\{[\s\S]{0,280}grid-row:\s*1 !important/, 'The current submit streak needs an explicit upper grid row even in a narrow card.');
+assert.match(styles, /\[data-signed-source-submit-streak\] > \[data-submit-streak-max\]\s*\{[\s\S]{0,280}grid-row:\s*3 !important/, 'The record submit streak needs an explicit lower grid row even in a narrow card.');
+assert.match(styles, /\[data-signed-source-submit-streak\] > \[data-submit-streak-main\] > svg\s*\{\s*grid-row:\s*1 !important/, 'The flame must be the first row of the current streak group.');
+assert.match(styles, /\[data-signed-source-submit-streak\] > \[data-submit-streak-main\] > strong\s*\{\s*grid-row:\s*2 !important/, 'The current streak value must stay below the flame.');
+assert.match(styles, /\[data-signed-source-submit-streak\] > \[data-submit-streak-main\] > span\s*\{\s*grid-row:\s*3 !important/, 'The current streak label must stay below its value.');
+assert.match(styles, /\[data-signed-source-submit-streak\] > \[data-submit-streak-max\] > b\s*\{\s*grid-row:\s*1 !important/, 'The record value must be the first row of the lower group.');
+assert.match(styles, /\[data-signed-source-submit-streak\] > \[data-submit-streak-max\] > small\s*\{\s*grid-row:\s*2 !important/, 'The record label must stay below its value.');
+assert.match(main, /function renderSubmissionCodeHighlight\([\s\S]{0,3400}syntax-keyword/, 'Submission source must be tokenized into syntax classes rather than rendered as one plain preformatted string.');
+assert.match(main, /<pre data-submission-code-block><code data-submission-code-highlight data-language=\{submissionSyntaxLanguage\(detail\.language\)\}>/, 'Submission source needs a highlighted code element with language metadata.');
+assert.match(styles, /\[data-submission-code-highlight\] \.syntax-keyword\s*\{[\s\S]{0,180}color:/, 'Syntax keywords need a visible colour treatment.');
+assert.match(styles, /\[data-submission-code-highlight\] \.syntax-string\s*\{[\s\S]{0,180}color:/, 'Syntax strings need a visible colour treatment.');
 
 for (const route of [
   "path('api/cppro/auth/me', cppro_api.cppro_auth_me)",
@@ -69,6 +97,8 @@ for (const route of [
   "path('api/cppro/problems/package/inspect', cppro_api.cppro_problem_package_inspect)",
   "path('api/cppro/problems/<str:identifier>/package.zip', cppro_api.cppro_problem_package_download)",
   "path('api/cppro/problems/<str:identifier>/testcases/import', cppro_api.cppro_problem_testcase_import)",
+  "path('api/cppro/problems/<str:identifier>/submissions', cppro_api.cppro_problem_submissions)",
+  "path('api/cppro/problems/<str:identifier>/comments', cppro_api.cppro_problem_comments)",
   "path('api/cppro/submissions/verification-challenge', cppro_api.cppro_submission_verification_challenge)",
   "path('api/cppro/admin/badges', cppro_api.cppro_admin_management, {'section': 'badges'})",
 ]) {
@@ -79,6 +109,16 @@ assert.ok(
     < urls.indexOf("path('api/cppro/problems/<str:identifier>', cppro_api.cppro_problems)"),
   'The protected testcase route must precede generic problem detail.',
 );
+assert.ok(
+  urls.indexOf("'api/cppro/problems/<str:identifier>/submissions'")
+    < urls.indexOf("path('api/cppro/problems/<str:identifier>', cppro_api.cppro_problems)"),
+  'Problem submission statistics must precede generic problem detail.',
+);
+assert.ok(
+  urls.indexOf("'api/cppro/problems/<str:identifier>/comments'")
+    < urls.indexOf("path('api/cppro/problems/<str:identifier>', cppro_api.cppro_problems)"),
+  'Problem comments must precede generic problem detail.',
+);
 assert.doesNotMatch(nginx, /\(admin\|management\|api\|accounts\|channels/, 'Localized /management must not be sent to Django.');
 assert.match(nginx, /location ~ \^\/\(vi\|en\)\(\/\.\*\)\?\$/, 'Localized CPPro SPA fallback is required.');
 assert.match(
@@ -87,6 +127,8 @@ assert.match(
   'Direct /management loads and refreshes must use the CPPro SPA fallback.',
 );
 assert.doesNotMatch(deploy, /cppro-public-shell/, 'Deployment smoke must not depend on a removed static marker.');
+assert.match(deploy, /PROJECT="\$\{PROJECT:-dmoj\}"/, 'Deployment must target the live dmoj Compose project by default.');
+assert.match(deploy, /compose up -d celery bridged judge wsevent nginx/, 'LCOJ deployment must start the judge that consumes queued submissions.');
 assert.match(deploy, /smoke_spa \/ \/tmp\/lcojcppro-home\.html/, 'Deployment must smoke-test the CPPro root.');
 assert.match(deploy, /smoke_spa \/management \/tmp\/lcojcppro-management\.html/, 'Deployment must smoke-test direct CPPro management loads.');
 assert.match(nginx, /location \^~ \/api\/ \{\s*try_files \$uri @uwsgi;/, 'The authenticated CPPro bridge must be routed directly to Django.');
@@ -112,8 +154,18 @@ for (const mutation of [
 assert.match(bridge, /def _can_manage_problem\(request_user, problem\):/, 'Bridge testcase access must use a server permission boundary.');
 assert.match(bridge, /def cppro_problem_admin\(request, identifier, action\):/, 'Bridge must serve protected testcase management data.');
 assert.match(bridge, /def cppro_problem_testcase_import\(request, identifier\):/, 'Bridge must import testcase ZIPs for an existing problem.');
+assert.match(bridge, /def _problem_testcase_preview_rows\(problem\):/, 'Testcase upload needs a lightweight preview helper.');
+assert.match(bridge, /'testcases': _problem_testcase_preview_rows\(problem\)/, 'Testcase upload must return preview rows without extracting full testcase content again.');
+assert.match(settings, /_bridged_bind_host = os\.environ\.get\('BRIDGED_BIND_HOST', ''\)\.strip\(\)/, 'Bridge bind host must be configurable after legacy local settings load.');
+assert.match(settings, /BRIDGED_JUDGE_ADDRESS = \[\(_bridged_bind_host, _bridged_secure_port\)\]/, 'Judge bridge must bind every attached Docker interface.');
+assert.match(settings, /BRIDGED_DJANGO_CONNECT = \(_bridged_connect_host, int\(os\.environ\.get\('BRIDGED_PORT', '9998'\)\)\)/, 'Django must connect to the bridge service hostname rather than 0.0.0.0.');
+assert.match(compose, /BRIDGED_BIND_HOST:\s*\$\{BRIDGED_BIND_HOST:-0\.0\.0\.0\}/, 'The bridged service must receive its all-interface bind setting.');
+assert.match(compose, /BRIDGED_CONNECT_HOST:\s*\$\{BRIDGED_CONNECT_HOST:-bridged\}/, 'The bridged service must receive its internal connect hostname.');
 assert.match(bridge, /def cppro_problem_package_inspect\(request\):/, 'Bridge must inspect full problem packages before saving.');
 assert.match(bridge, /def cppro_problem_package_download\(request, identifier\):/, 'Bridge must export the current problem package.');
+assert.match(bridge, /def cppro_problem_submissions\(request, identifier\):/, 'Bridge must expose per-problem submission statistics.');
+assert.match(bridge, /def cppro_problem_comments\(request, identifier, comment_id=None, action=None\):/, 'Bridge must expose native problem comments.');
+assert.match(bridge, /def _cppro_visible_problem\(request, identifier\):/, 'Per-problem bridge routes must enforce problem visibility.');
 assert.match(bridge, /def cppro_submission_verification_challenge\(request\):/, 'Bridge must issue server-side submission challenges.');
 assert.match(bridge, /def _consume_submission_verification\(/, 'Bridge must validate a submitted challenge server-side.');
 assert.match(bridge, /verification_error = _consume_submission_verification\(request, profile, payload\)/, 'Submissions must consume a one-time server-side challenge.');

@@ -54,5 +54,10 @@ assert.match(
   /\[data-user-menu-admin-grid\]\s*\{[\s\S]{0,160}grid-template-columns:\s*minmax\(0, 1fr\)/,
   'The two admin actions must render as two separate rows.',
 );
+assert.match(
+  styles,
+  /\[data-top-user-dropdown\] \[data-admin-dmoj-action='true'\]\s*\{[\s\S]{0,700}box-shadow:/,
+  'The DMOJ admin action must have its own raised shadow treatment.',
+);
 
 console.log('admin-menu contract passed: DMOJ /admin/ and CPPro /management are separate actions.');

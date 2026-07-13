@@ -6093,6 +6093,10 @@ const managementInlineEditableSections = new Set<ManagementSectionKey>([
   'incidents',
 ]);
 
+// Problem rows have a full editor (statement, judge policy and testcase tools).
+// Keep the table action pointed at that workflow instead of the generic row drawer.
+const managementDedicatedProblemEditorSection: ManagementSectionKey = 'problems';
+
 type ManagementCreateField = {
   key: string;
   label: string;
@@ -6298,6 +6302,7 @@ function ManagementDataPanel({
   const [rowOverrides, setRowOverrides] = useState<Record<string, Record<string, unknown>>>({});
   const actions = managementActionsForSection(section);
   const inlineEditable = managementInlineEditableSections.has(section);
+  const usesDedicatedProblemEditor = section === managementDedicatedProblemEditorSection;
   const isDashboard = section === 'dashboard';
   const activeCreateConfig = createAction ? managementCreateConfigForSection(section) : null;
   const filteredRows = useMemo(() => {
@@ -6596,7 +6601,7 @@ function ManagementDataPanel({
                           type="button"
                           data-management-edit-action={inlineEditable ? 'edit' : 'inspect'}
                           onClick={() => {
-                            if (!inlineEditable && onOpenRow?.(visibleRow)) return;
+                            if ((usesDedicatedProblemEditor || !inlineEditable) && onOpenRow?.(visibleRow)) return;
                             openRowEditor(visibleRow, rowKey);
                           }}
                           >
@@ -8890,6 +8895,15 @@ type ManagementProblemTestCase = {
   isSample?: boolean;
 };
 
+type ManagementProblemTestcasePreview = {
+  key: string;
+  order: number;
+  inputLabel: string;
+  outputLabel: string;
+  points: number | null;
+  isSample: boolean;
+};
+
 const emptyManagementProblemDraft: ManagementProblemDraft = {
   externalId: '',
   title: '',
@@ -8937,6 +8951,31 @@ function normalizeManagementProblemTestCases(value: unknown): ManagementProblemT
       isSample: Boolean(row.isSample ?? row.is_sample ?? row.is_pretest),
     };
   }).filter((item) => item.input.length > 0 || String(item.output ?? '').length > 0 || (item.outputs?.length || 0) > 0);
+}
+
+function managementTestcasePreviewText(value: unknown, limit = 120) {
+  const text = String(value ?? '').replace(/\s+/g, ' ').trim();
+  if (!text) return '—';
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
+function managementProblemTestcasePreviewRows(value: unknown): ManagementProblemTestcasePreview[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item, index) => {
+    const row = item && typeof item === 'object' ? item as Record<string, unknown> : {};
+    const rawInput = String(row.input_file ?? row.inputFile ?? row.input ?? '');
+    const rawOutput = String(row.output_file ?? row.outputFile ?? row.output ?? row.outputs ?? '');
+    const rawPoints = Number(row.points ?? row.point);
+    const order = Number(row.order ?? index + 1) || index + 1;
+    return {
+      key: String(row.id ?? `${order}-${rawInput.slice(0, 40)}-${rawOutput.slice(0, 40)}`),
+      order,
+      inputLabel: managementTestcasePreviewText(rawInput),
+      outputLabel: managementTestcasePreviewText(rawOutput),
+      points: Number.isFinite(rawPoints) ? rawPoints : null,
+      isSample: Boolean(row.is_pretest ?? row.isPretest ?? row.isSample ?? row.is_sample),
+    };
+  }).filter((row) => row.inputLabel !== '—' || row.outputLabel !== '—');
 }
 
 function mergeManagementProblemTestCases(current: ManagementProblemTestCase[], incoming: ManagementProblemTestCase[]) {
@@ -8991,7 +9030,10 @@ function ManagementProblemForm({
   const [exportingPackage, setExportingPackage] = useState(false);
   const [testcaseZipMode, setTestcaseZipMode] = useState<'append' | 'replace'>('append');
   const [packageSummary, setPackageSummary] = useState('');
-  const [, setExistingTestCases] = useState<ManagementProblemTestCase[]>([]);
+  const [testcasePreviewRows, setTestcasePreviewRows] = useState<ManagementProblemTestcasePreview[]>([]);
+  // A preview-only response intentionally omits testcase contents. Never let
+  // that lightweight representation overwrite the persisted testcase set.
+  const [testcaseDraftHydrated, setTestcaseDraftHydrated] = useState(!editing);
   const [existingTestCasesLoading, setExistingTestCasesLoading] = useState(editing);
   const [existingTestCasesError, setExistingTestCasesError] = useState('');
   const [testcaseDirty, setTestcaseDirty] = useState(false);
@@ -9006,7 +9048,8 @@ function ManagementProblemForm({
   useEffect(() => {
     if (!editing) {
       setDraft(emptyManagementProblemDraft);
-      setExistingTestCases([]);
+      setTestcasePreviewRows([]);
+      setTestcaseDraftHydrated(true);
       setExistingTestCasesLoading(false);
       setExistingTestCasesError('');
       setTestcaseDirty(false);
@@ -9015,7 +9058,8 @@ function ManagementProblemForm({
     }
     let cancelled = false;
     setLoading(true);
-    setExistingTestCases([]);
+    setTestcasePreviewRows([]);
+    setTestcaseDraftHydrated(false);
     setExistingTestCasesError('');
     setExistingTestCasesLoading(true);
     setTestcaseDirty(false);
@@ -9028,8 +9072,11 @@ function ManagementProblemForm({
           description: String(row.description || row.statement || ''),
           difficulty: ['Medium', 'Hard'].includes(String(row.difficulty)) ? String(row.difficulty) as 'Medium' | 'Hard' : 'Easy',
           rating: Number(row.rating ?? 1) || 1,
-          timeLimit: Number(row.time_limit ?? row.timeLimit ?? row.time_limit_ms ?? row.timeLimitMs ?? 1000) || 1000,
-          memoryLimit: Number(row.memory_limit ?? row.memoryLimit ?? row.memory_limit_mb ?? row.memoryLimitMb ?? 256) || 256,
+          // The bridge exposes legacy seconds/KB fields as well as the editor's
+          // canonical milliseconds/MB fields. Prefer the latter so opening an
+          // existing problem never turns 1 s / 256 MB into 1 ms / 262144 MB.
+          timeLimit: Number(row.timeLimitMs ?? row.time_limit_ms ?? row.timeLimit ?? row.time_limit ?? 1000) || 1000,
+          memoryLimit: Number(row.memoryLimitMb ?? row.memory_limit_mb ?? row.memoryLimit ?? row.memory_limit ?? 256) || 256,
           visibility: ['public', 'waiting', 'organization'].includes(String(row.visibility)) ? String(row.visibility) as ManagementProblemDraft['visibility'] : 'private',
           scoringMode: Boolean(row.judge_run_all ?? row.judgeRunAll) ? 'partial' : 'full',
           allowedLanguages: normalizeStringList(row.allowed_languages ?? row.allowedLanguages, []),
@@ -9057,9 +9104,11 @@ function ManagementProblemForm({
         try {
           const testCasePayload = await cpproApiFetch<unknown>(`/problems/${encodeURIComponent(problemId)}/testcases`);
           if (!cancelled) {
-            const testCases = normalizeManagementProblemTestCases(rowsFromApi<Record<string, unknown>>(testCasePayload));
+            const rawTestCases = rowsFromApi<Record<string, unknown>>(testCasePayload);
+            const testCases = normalizeManagementProblemTestCases(rawTestCases);
             const firstSample = testCases.find((testCase) => testCase.isSample) || testCases[0];
-            setExistingTestCases(testCases);
+            setTestcasePreviewRows(managementProblemTestcasePreviewRows(rawTestCases));
+            setTestcaseDraftHydrated(true);
             setDraft((current) => ({
               ...current,
               testCases,
@@ -9069,7 +9118,8 @@ function ManagementProblemForm({
           }
         } catch (error) {
           if (!cancelled) {
-            setExistingTestCases([]);
+            setTestcasePreviewRows([]);
+            setTestcaseDraftHydrated(false);
             setExistingTestCasesError(error instanceof Error ? error.message : 'Could not load saved testcase details.');
           }
         } finally {
@@ -9097,6 +9147,10 @@ function ManagementProblemForm({
   };
 
   const patchSampleTestcase = (field: 'input' | 'output', value: string) => {
+    // A ZIP import returns filenames/metadata only. Until the editor is
+    // reloaded with full testcase contents, changing a stale sample draft must
+    // not mark the whole testcase collection for replacement.
+    if (editing && !testcaseDraftHydrated) return;
     setDraft((current) => {
       const sampleIndex = current.testCases.findIndex((testCase) => testCase.isSample);
       const targetIndex = sampleIndex >= 0 ? sampleIndex : 0;
@@ -9178,6 +9232,8 @@ function ManagementProblemForm({
       const firstSample = tests.find((testCase) => testCase.isSample) || tests[0];
       const summary = payload.summary && typeof payload.summary === 'object' ? payload.summary as Record<string, unknown> : {};
       const testSummary = summary.testCases && typeof summary.testCases === 'object' ? summary.testCases as Record<string, unknown> : {};
+      setTestcasePreviewRows(managementProblemTestcasePreviewRows(tests));
+      setTestcaseDraftHydrated(true);
       setDraft((current) => ({
         ...current,
         externalId: String(imported.externalId ?? imported.external_id ?? current.externalId ?? ''),
@@ -9281,25 +9337,18 @@ function ManagementProblemForm({
         const importedCount = Number(imported.importedCount ?? imported.imported_count ?? 0) || 0;
         const totalCount = Number(imported.totalCount ?? imported.total_count ?? importedCount) || importedCount;
         const duplicatesSkipped = Number(imported.duplicatesSkipped ?? imported.duplicates_skipped ?? 0) || 0;
-        setExistingTestCasesLoading(true);
-        void cpproApiFetch<unknown>(`/problems/${encodeURIComponent(routeId)}/testcases`)
-          .then((testCasePayload) => {
-            const testCases = normalizeManagementProblemTestCases(rowsFromApi<Record<string, unknown>>(testCasePayload));
-            const firstSample = testCases.find((testCase) => testCase.isSample) || testCases[0];
-            setExistingTestCases(testCases);
-            setDraft((current) => ({
-              ...current,
-              testCases,
-              sampleInput: firstSample?.input ?? '',
-              sampleOutput: firstSample ? String(firstSample.output ?? firstSample.outputs?.[0] ?? '') : '',
-            }));
-            setTestcaseDirty(false);
-            setExistingTestCasesError('');
-          })
-          .catch((error) => {
-            setExistingTestCasesError(error instanceof Error ? error.message : 'Testcase ZIP was imported, but the refreshed preview could not be loaded.');
-          })
-          .finally(() => setExistingTestCasesLoading(false));
+        // The import response carries lightweight rows, so the user sees the
+        // saved testcase table immediately without downloading the full ZIP.
+        setTestcasePreviewRows(managementProblemTestcasePreviewRows(imported.testcases));
+        setTestcaseDraftHydrated(false);
+        setDraft((current) => ({
+          ...current,
+          testCases: [],
+          sampleInput: '',
+          sampleOutput: '',
+        }));
+        setTestcaseDirty(false);
+        setExistingTestCasesError('');
         setPackageSummary(
           `${testcaseZipMode === 'replace' ? 'Replaced with' : 'Added'} ${importedCount.toLocaleString('vi-VN')} testcase(s). `
           + `${totalCount.toLocaleString('vi-VN')} testcase(s) are now saved in database.`
@@ -9322,6 +9371,8 @@ function ManagementProblemForm({
       const base = testcaseZipMode === 'replace' ? [] : draft.testCases;
       const { merged, duplicatesSkipped } = mergeManagementProblemTestCases(base, tests);
       const firstSample = merged.find((testCase) => testCase.isSample) || merged[0];
+      setTestcasePreviewRows(managementProblemTestcasePreviewRows(merged));
+      setTestcaseDraftHydrated(true);
       setDraft((current) => ({
         ...current,
         testCases: merged,
@@ -9390,7 +9441,7 @@ function ManagementProblemForm({
         adminAttachmentSize: draft.adminAttachmentSize || undefined,
         ...(!editing
           ? { testCases: draft.testCases.length ? draft.testCases : fallbackTestCases }
-          : testcaseDirty && draft.testCases.length ? { testCases: draft.testCases } : {}),
+          : testcaseDraftHydrated && testcaseDirty && draft.testCases.length ? { testCases: draft.testCases } : {}),
       };
       await cpproApiFetch(editing ? `/problems/${encodeURIComponent(routeId)}` : '/problems', {
         method: editing ? 'PUT' : 'POST',
@@ -9408,6 +9459,11 @@ function ManagementProblemForm({
 
   if (loading) return <DataLoadingPanel label="Loading problem editor" rows={7} />;
   const visibleTestCases = draft.testCases;
+  const testcaseTableRows = testcasePreviewRows.length
+    ? testcasePreviewRows
+    : managementProblemTestcasePreviewRows(visibleTestCases);
+  const shownTestcaseRows = testcaseTableRows.slice(0, 50);
+  const testcaseSampleEditingDisabled = editing && !testcaseDraftHydrated;
   return (
     <section className="cppro-management-subpage" data-management-subpage="problem">
       <div className="cppro-management-form-grid">
@@ -9550,33 +9606,43 @@ function ManagementProblemForm({
             ))}
           </div>
           <div className="cppro-management-sample-test">
-            <label><span>{draft.testCases.length ? 'First sample input from package' : 'Sample input'}</span><textarea rows={5} value={draft.sampleInput} onChange={(event) => patchSampleTestcase('input', event.currentTarget.value)} /></label>
-            <label><span>{draft.testCases.length ? 'First sample output from package' : 'Sample output'}</span><textarea rows={5} value={draft.sampleOutput} onChange={(event) => patchSampleTestcase('output', event.currentTarget.value)} /></label>
+            <label><span>{testcaseTableRows.length ? 'First sample input from package' : 'Sample input'}</span><textarea rows={5} value={draft.sampleInput} disabled={testcaseSampleEditingDisabled} onChange={(event) => patchSampleTestcase('input', event.currentTarget.value)} /></label>
+            <label><span>{testcaseTableRows.length ? 'First sample output from package' : 'Sample output'}</span><textarea rows={5} value={draft.sampleOutput} disabled={testcaseSampleEditingDisabled} onChange={(event) => patchSampleTestcase('output', event.currentTarget.value)} /></label>
           </div>
           <div className="cppro-management-package-summary" data-management-problem-testcase-summary>
             <ListChecks size={16} />
             <span>
-              <strong>{existingTestCasesLoading ? 'Loading testcase details…' : visibleTestCases.length ? `${visibleTestCases.length.toLocaleString('vi-VN')} testcase(s) available` : 'Manual sample testcase mode'}</strong>
-              <small>{visibleTestCases.length ? `${visibleTestCases.filter((item) => item.isSample).length.toLocaleString('vi-VN')} sample testcase(s) will be saved.` : 'Upload a ZIP package to import many testcase files at once.'}</small>
+              <strong>{existingTestCasesLoading ? 'Loading testcase details…' : testcaseTableRows.length ? `${testcaseTableRows.length.toLocaleString('vi-VN')} testcase(s) available` : 'Manual sample testcase mode'}</strong>
+              <small>{testcaseSampleEditingDisabled
+                ? 'ZIP testcase changes are saved. Reload this editor before changing sample contents.'
+                : testcaseTableRows.length
+                  ? `${testcaseTableRows.filter((item) => item.isSample).length.toLocaleString('vi-VN')} sample testcase(s) are marked in the table.`
+                  : 'Upload a ZIP package to import many testcase files at once.'}</small>
             </span>
           </div>
           {existingTestCasesError ? <p className="service-message">{existingTestCasesError}</p> : null}
-          {visibleTestCases.length ? (
-            <details className="cppro-management-existing-testcases" data-management-existing-testcases>
-              <summary><Eye size={16} />View testcase details ({visibleTestCases.length.toLocaleString('vi-VN')})</summary>
-              <div className="cppro-management-existing-testcase-list">
-                {visibleTestCases.map((testCase, index) => (
-                  <article key={`${index}-${testCase.input.slice(0, 32)}`}>
-                    <header><strong>Test #{index + 1}</strong>{testCase.isSample ? <span>Sample</span> : <span>Private</span>}</header>
-                    <div>
-                      <section><small>Input</small><pre>{testCase.input || '∅'}</pre></section>
-                      <section><small>Expected output</small><pre>{testCase.output || testCase.outputs?.join('\n') || '∅'}</pre></section>
-                    </div>
-                    {testCase.explanation ? <p>{testCase.explanation}</p> : null}
-                  </article>
-                ))}
+          {testcaseTableRows.length ? (
+            <section className="cppro-management-testcase-table" data-management-testcase-table>
+              <header>
+                <span><ListChecks size={16} /><strong>Testcase table</strong></span>
+                <small>{shownTestcaseRows.length.toLocaleString('vi-VN')} / {testcaseTableRows.length.toLocaleString('vi-VN')} rows</small>
+              </header>
+              <div>
+                <table>
+                  <thead><tr><th>#</th><th>Type</th><th>Input</th><th>Expected output</th><th>Points</th></tr></thead>
+                  <tbody>{shownTestcaseRows.map((testCase) => (
+                    <tr key={testCase.key}>
+                      <td>{testCase.order}</td>
+                      <td><span data-testcase-kind={testCase.isSample ? 'sample' : 'private'}>{testCase.isSample ? 'Sample' : 'Private'}</span></td>
+                      <td><code>{testCase.inputLabel}</code></td>
+                      <td><code>{testCase.outputLabel}</code></td>
+                      <td>{testCase.points === null ? '—' : testCase.points.toLocaleString('vi-VN')}</td>
+                    </tr>
+                  ))}</tbody>
+                </table>
               </div>
-            </details>
+              {testcaseTableRows.length > shownTestcaseRows.length ? <footer>Only the first 50 rows are rendered to keep large testcase ZIPs responsive.</footer> : null}
+            </section>
           ) : null}
         </aside>
       </div>
@@ -10961,7 +11027,7 @@ function SignedInHomePage({ data, go, user }: { data: CpproData; go: (path: stri
           <p data-signed-activity-summary>{activitySummary}</p>
         </article>
 
-        <article className="grid place-items-center streak-widget" data-signed-source-submit-streak>
+        <article className="streak-widget" data-signed-source-submit-streak>
           <div data-submit-streak-main>
             <Flame size={28} />
             <strong>{submitStreak}</strong>
@@ -13986,6 +14052,66 @@ function ProblemSubmitPage({
   );
 }
 
+const submissionSyntaxKeywords = {
+  cpp: new Set([
+    'alignas', 'alignof', 'asm', 'auto', 'break', 'case', 'catch', 'class', 'const', 'constexpr', 'continue', 'default', 'delete', 'do', 'else', 'enum', 'explicit', 'export', 'extern', 'for', 'friend', 'if', 'inline', 'mutable', 'namespace', 'new', 'noexcept', 'operator', 'private', 'protected', 'public', 'register', 'return', 'sizeof', 'static', 'struct', 'switch', 'template', 'this', 'throw', 'try', 'typedef', 'typename', 'union', 'using', 'virtual', 'volatile', 'while',
+  ]),
+  python: new Set([
+    'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'False', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'None', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'True', 'try', 'while', 'with', 'yield',
+  ]),
+  javascript: new Set([
+    'as', 'async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'default', 'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'from', 'function', 'if', 'import', 'in', 'instanceof', 'let', 'new', 'of', 'return', 'static', 'switch', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield',
+  ]),
+  java: new Set([
+    'abstract', 'assert', 'break', 'case', 'catch', 'class', 'const', 'continue', 'default', 'do', 'else', 'enum', 'extends', 'final', 'finally', 'for', 'if', 'implements', 'import', 'instanceof', 'interface', 'native', 'new', 'package', 'private', 'protected', 'public', 'return', 'static', 'strictfp', 'super', 'switch', 'synchronized', 'this', 'throw', 'throws', 'transient', 'try', 'volatile', 'while',
+  ]),
+};
+
+const submissionSyntaxTypes = new Set([
+  'auto', 'bool', 'boolean', 'byte', 'char', 'double', 'float', 'int', 'long', 'number', 'short', 'signed', 'size_t', 'string', 'unsigned', 'void', 'wchar_t', 'Array', 'Object', 'String', 'Integer', 'Long', 'Double', 'Float', 'Boolean', 'List', 'Map', 'Set', 'Vector',
+]);
+
+const submissionSyntaxBuiltins = new Set([
+  'cin', 'cout', 'endl', 'main', 'print', 'input', 'len', 'range', 'enumerate', 'sum', 'min', 'max', 'abs', 'Math', 'console', 'System', 'printf', 'scanf', 'malloc', 'free', 'vector', 'sort', 'lower_bound', 'upper_bound',
+]);
+
+function submissionSyntaxLanguage(language?: string) {
+  const normalized = String(language || '').toLowerCase();
+  if (/(python|pypy|^py\d*)/.test(normalized)) return 'python';
+  if (/(typescript|javascript|node|^tsx?$|^jsx?$)/.test(normalized)) return 'javascript';
+  if (/java/.test(normalized)) return 'java';
+  return 'cpp';
+}
+
+function renderSubmissionCodeHighlight(code: string, language?: string): React.ReactNode[] {
+  const syntaxLanguage = submissionSyntaxLanguage(language);
+  const keywords = submissionSyntaxKeywords[syntaxLanguage];
+  const tokenPattern = /\/\/[^\r\n]*|\/\*[\s\S]*?\*\/|#[^\r\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)\b|\b[A-Za-z_$][\w$]*\b/g;
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  let tokenIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(code)) !== null) {
+    if (match.index > cursor) parts.push(code.slice(cursor, match.index));
+    const token = match[0];
+    let tokenClass = '';
+    if (token.startsWith('//') || token.startsWith('/*') || (token.startsWith('#') && syntaxLanguage === 'python')) tokenClass = 'syntax-comment';
+    else if (token.startsWith('#')) tokenClass = 'syntax-preprocessor';
+    else if (token.startsWith('"') || token.startsWith("'") || token.startsWith('`')) tokenClass = 'syntax-string';
+    else if (/^(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)$/.test(token)) tokenClass = 'syntax-number';
+    else if (submissionSyntaxTypes.has(token)) tokenClass = 'syntax-type';
+    else if (keywords.has(token)) tokenClass = 'syntax-keyword';
+    else if (submissionSyntaxBuiltins.has(token)) tokenClass = 'syntax-builtin';
+
+    parts.push(tokenClass ? <span className={tokenClass} key={`submission-code-token-${tokenIndex}`}>{token}</span> : token);
+    cursor = tokenPattern.lastIndex;
+    tokenIndex += 1;
+  }
+  if (cursor < code.length) parts.push(code.slice(cursor));
+  return parts;
+}
+
 function SubmissionDetailPage({ id, data, go, currentUser }: { id: string; data: CpproData; go: (path: string) => void; currentUser: StoredCpproUser | null }) {
   const [detail, setDetail] = useState<SubmissionDetail | null>(() => {
     const fallback = data.submissions.find((item) => String(item.id) === String(id));
@@ -14039,6 +14165,7 @@ function SubmissionDetailPage({ id, data, go, currentUser }: { id: string; data:
 
   const problem = data.problems.find((item) => String(item.id) === String(detail?.problemId) || item.title === detail?.problemTitle || item.slug === detail?.problemSlug);
   const code = detail?.code || '';
+  const highlightedCode = useMemo(() => renderSubmissionCodeHighlight(code, detail?.language), [code, detail?.language]);
   const copyCode = async () => {
     if (!code) return;
     const ok = await copyTextToClipboard(code);
@@ -14116,7 +14243,9 @@ function SubmissionDetailPage({ id, data, go, currentUser }: { id: string; data:
               <strong>Source code</strong>
               <button type="button" disabled={!code} onClick={() => void copyCode()}><Copy size={15} />{copied ? 'Đã copy' : copyFailed ? 'Copy failed' : 'Copy'}</button>
             </header>
-            {code ? <pre>{code}</pre> : <p>Source code chỉ hiển thị khi bạn có quyền xem.</p>}
+            {code ? (
+              <pre data-submission-code-block><code data-submission-code-highlight data-language={submissionSyntaxLanguage(detail.language)}>{highlightedCode}</code></pre>
+            ) : <p>Source code chỉ hiển thị khi bạn có quyền xem.</p>}
           </section>
         ) : null}
         <section data-submission-result-panel>

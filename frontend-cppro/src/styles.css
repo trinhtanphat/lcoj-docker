@@ -18129,6 +18129,144 @@ html[data-theme='dark'] [data-management-contest-format-cards] em {
 .cppro-management-package-summary > svg {
   color: var(--blue);
 }
+
+.cppro-management-testcase-table {
+  margin-top: 0.75rem;
+  overflow: hidden;
+  border: 1px solid rgba(96, 165, 250, 0.36);
+  border-radius: 0.75rem;
+  background: rgba(8, 20, 39, 0.78);
+}
+
+.cppro-management-testcase-table > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid rgba(96, 165, 250, 0.22);
+  padding: 0.7rem 0.85rem;
+}
+
+.cppro-management-testcase-table > header > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #eaf6ff;
+}
+
+.cppro-management-testcase-table > header strong {
+  font-size: 0.8rem;
+}
+
+.cppro-management-testcase-table > header small,
+.cppro-management-testcase-table > footer {
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 850;
+}
+
+.cppro-management-testcase-table > div {
+  max-height: 24rem;
+  overflow: auto;
+}
+
+.cppro-management-testcase-table table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.cppro-management-testcase-table th,
+.cppro-management-testcase-table td {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 0.56rem 0.65rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.cppro-management-testcase-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #101d32;
+  color: #93c5fd;
+  font-size: 0.66rem;
+  font-weight: 950;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.cppro-management-testcase-table th:nth-child(1),
+.cppro-management-testcase-table td:nth-child(1) {
+  width: 2.25rem;
+  text-align: center;
+}
+
+.cppro-management-testcase-table th:nth-child(2),
+.cppro-management-testcase-table td:nth-child(2) {
+  width: 4.8rem;
+}
+
+.cppro-management-testcase-table th:nth-child(5),
+.cppro-management-testcase-table td:nth-child(5) {
+  width: 3.6rem;
+  text-align: right;
+}
+
+.cppro-management-testcase-table td {
+  color: #dbeafe;
+  font-size: 0.74rem;
+  font-weight: 780;
+}
+
+.cppro-management-testcase-table td code {
+  display: block;
+  overflow: hidden;
+  color: #cbd5e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cppro-management-testcase-table [data-testcase-kind] {
+  display: inline-flex;
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-radius: 999px;
+  color: #cbd5e1;
+  font-size: 0.62rem;
+  font-weight: 950;
+  padding: 0.2rem 0.4rem;
+  text-transform: uppercase;
+}
+
+.cppro-management-testcase-table [data-testcase-kind='sample'] {
+  border-color: rgba(34, 197, 94, 0.48);
+  background: rgba(22, 163, 74, 0.12);
+  color: #bbf7d0;
+}
+
+.cppro-management-testcase-table > footer {
+  border-top: 1px solid rgba(96, 165, 250, 0.18);
+  line-height: 1.4;
+  padding: 0.55rem 0.75rem;
+}
+
+@media (max-width: 700px) {
+  .cppro-management-testcase-table > div {
+    max-height: 20rem;
+  }
+
+  .cppro-management-testcase-table th,
+  .cppro-management-testcase-table td {
+    padding: 0.48rem;
+  }
+
+  .cppro-management-testcase-table th:nth-child(5),
+  .cppro-management-testcase-table td:nth-child(5) {
+    display: none;
+  }
+}
+
 .cppro-management-existing-testcases {
   margin-top: 0.75rem;
   overflow: hidden;
@@ -21502,5 +21640,179 @@ html[data-theme='dark'] .cppro-management-record-list code {
 
   [data-signed-source-submit-streak] [data-submit-streak-divider] {
     width: min(112px, 74%) !important;
+  }
+}
+
+/* Submission source is rendered as safe React text, then tokenized into these
+   readable colour groups. Keep the panel dark in either site theme so source
+   code contrast does not change under the reader. */
+[data-submission-code-panel] pre[data-submission-code-block] {
+  overflow: auto;
+  background: #08111f !important;
+  color: #e2e8f0 !important;
+  text-shadow: none;
+}
+
+[data-submission-code-highlight] {
+  display: block;
+  min-width: max-content;
+  color: #e2e8f0;
+  font-family: 'JetBrains Mono', 'Cascadia Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-ligatures: none;
+  font-weight: 550;
+  line-height: 1.68;
+}
+
+[data-submission-code-highlight] .syntax-comment {
+  color: #94a3b8;
+  font-style: italic;
+}
+
+[data-submission-code-highlight] .syntax-preprocessor {
+  color: #c4b5fd;
+}
+
+[data-submission-code-highlight] .syntax-keyword {
+  color: #f9a8d4;
+  font-weight: 800;
+}
+
+[data-submission-code-highlight] .syntax-type {
+  color: #67e8f9;
+  font-weight: 750;
+}
+
+[data-submission-code-highlight] .syntax-string {
+  color: #a7f3d0;
+}
+
+[data-submission-code-highlight] .syntax-number {
+  color: #fdba74;
+}
+
+[data-submission-code-highlight] .syntax-builtin {
+  color: #93c5fd;
+}
+
+/* Keep the legacy DMOJ entry visually tactile, without making it look like
+   the CPPro management action that remains the primary blue button. */
+[data-top-user-dropdown] [data-admin-dmoj-action='true'] {
+  border-color: color-mix(in srgb, var(--admin-accent) 34%, var(--line));
+  background: linear-gradient(180deg, color-mix(in srgb, var(--admin-accent) 9%, var(--paper)), color-mix(in srgb, var(--paper) 95%, transparent));
+  box-shadow:
+    0 3px 0 color-mix(in srgb, var(--admin-accent) 28%, var(--line)),
+    0 10px 18px rgba(15, 23, 42, 0.12);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+}
+
+[data-top-user-dropdown] [data-admin-dmoj-action='true']:hover,
+[data-top-user-dropdown] [data-admin-dmoj-action='true']:focus-visible {
+  transform: translateY(-1px);
+  box-shadow:
+    0 4px 0 color-mix(in srgb, var(--admin-accent) 38%, var(--line)),
+    0 14px 24px rgba(15, 23, 42, 0.16);
+}
+
+[data-top-user-dropdown] [data-admin-dmoj-action='true']:active {
+  transform: translateY(2px);
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--admin-accent) 34%, var(--line)),
+    0 5px 10px rgba(15, 23, 42, 0.1);
+}
+
+/* Do not let legacy utility classes or narrow-card overrides turn the current
+   streak and its record into a horizontal/overlapping row. */
+[data-signed-source-submit-streak] {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  grid-template-rows: minmax(0, 1fr) 1px minmax(0, 1fr) !important;
+  grid-template-areas:
+    'main'
+    'divider'
+    'max' !important;
+  align-items: stretch !important;
+  justify-items: stretch !important;
+  align-content: stretch !important;
+  justify-content: stretch !important;
+  gap: 0 !important;
+  min-height: 212px !important;
+  overflow: hidden;
+}
+
+[data-signed-source-submit-streak] > [data-submit-streak-main],
+[data-signed-source-submit-streak] > [data-submit-streak-max] {
+  position: relative !important;
+  inset: auto !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+  width: 100% !important;
+  min-width: 0;
+  min-height: 0;
+  align-content: center !important;
+  justify-items: center !important;
+  gap: 4px !important;
+}
+
+[data-signed-source-submit-streak] > [data-submit-streak-main] {
+  grid-template-rows: auto auto auto !important;
+}
+
+[data-signed-source-submit-streak] > [data-submit-streak-max] {
+  grid-template-rows: auto auto !important;
+}
+
+[data-signed-source-submit-streak] > [data-submit-streak-main] > svg,
+[data-signed-source-submit-streak] > [data-submit-streak-main] > strong,
+[data-signed-source-submit-streak] > [data-submit-streak-main] > span,
+[data-signed-source-submit-streak] > [data-submit-streak-max] > b,
+[data-signed-source-submit-streak] > [data-submit-streak-max] > small {
+  grid-column: 1 !important;
+  justify-self: center !important;
+  min-width: 0;
+}
+
+[data-signed-source-submit-streak] > [data-submit-streak-main] > svg { grid-row: 1 !important; }
+[data-signed-source-submit-streak] > [data-submit-streak-main] > strong { grid-row: 2 !important; }
+[data-signed-source-submit-streak] > [data-submit-streak-main] > span { grid-row: 3 !important; }
+[data-signed-source-submit-streak] > [data-submit-streak-max] > b { grid-row: 1 !important; }
+[data-signed-source-submit-streak] > [data-submit-streak-max] > small { grid-row: 2 !important; }
+
+[data-signed-source-submit-streak] > [data-submit-streak-main] {
+  grid-area: main !important;
+  grid-row: 1 !important;
+  grid-column: 1 !important;
+  order: initial !important;
+}
+
+[data-signed-source-submit-streak] > [data-submit-streak-divider] {
+  grid-area: divider !important;
+  grid-row: 2 !important;
+  grid-column: 1 !important;
+  order: initial !important;
+  align-self: center !important;
+  justify-self: center !important;
+  width: min(130px, 82%) !important;
+  height: 1px !important;
+  margin: 0 !important;
+}
+
+[data-signed-source-submit-streak] > [data-submit-streak-max] {
+  grid-area: max !important;
+  grid-row: 3 !important;
+  grid-column: 1 !important;
+  order: initial !important;
+}
+
+[data-signed-source-submit-streak] > [data-submit-streak-main] span,
+[data-signed-source-submit-streak] > [data-submit-streak-max] small {
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  text-align: center;
+  white-space: normal !important;
+}
+
+@media (max-width: 720px) {
+  [data-signed-source-submit-streak] {
+    min-height: 190px !important;
   }
 }
