@@ -1,0 +1,48 @@
+services:
+  judge:
+    image: dmoj/judge-tier1:lcoj-v5.0.0
+    container_name: lcoj_judge
+    restart: unless-stopped
+    init: true
+    # The upstream entrypoint runs pip as root on every restart. The image
+    # already contains the judge source and runtime, so invoke it directly as
+    # the unprivileged judge account instead.
+    user: judge
+    entrypoint: ["/env/bin/dmoj"]
+    command:
+      - -p
+      - "9999"
+      - -c
+      - /problems/judge.yml
+      - bridged
+      - ${DMOJ_JUDGE_NAME:?DMOJ_JUDGE_NAME is required}
+      - ${DMOJ_JUDGE_KEY:?DMOJ_JUDGE_KEY is required}
+    environment:
+      DMOJ_IN_DOCKER: "1"
+      PYTHONUNBUFFERED: "1"
+      PYTHONIOENCODING: utf8
+      LANG: C.UTF-8
+      HOME: /home/judge
+    read_only: true
+    tmpfs:
+      - /tmp:rw,exec,nosuid,nodev,size=${DMOJ_JUDGE_TMPFS_SIZE:-1g}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # The upstream DMOJ container documents SYS_PTRACE for cptbox. No other
+    # Linux capability is retained by the long-running worker.
+    cap_add:
+      - SYS_PTRACE
+    pids_limit: ${DMOJ_JUDGE_PIDS_LIMIT:-512}
+    mem_limit: ${DMOJ_JUDGE_MEM_LIMIT:-2g}
+    cpus: ${DMOJ_JUDGE_CPUS:-2}
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    volumes:
+      - ./problems/:/problems/
+    networks: [nginx]
+    depends_on: [bridged]

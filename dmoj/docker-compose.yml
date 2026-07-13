@@ -72,11 +72,17 @@ services:
       - ./repo/:/site/
     working_dir: /site/
     env_file: [environment/mysql.env, environment/site.env]
+    environment:
+      BRIDGED_BIND_HOST: ${BRIDGED_BIND_HOST:-0.0.0.0}
+      BRIDGED_CONNECT_HOST: ${BRIDGED_CONNECT_HOST:-bridged}
     networks: [site, nginx, db]
     depends_on: [base, db, redis]
-    ports:
-      - ${BRIDGED_PORT:-9998}:9998
-      - ${BRIDGED_SECURE_PORT:-9999}:9999
+    # The Django site and judge reach this service through Docker DNS on their
+    # shared networks. Publishing the bridge to the host would expose its
+    # unauthenticated protocol to the Internet without helping those clients.
+    expose:
+      - "9998"
+      - "9999"
   wsevent:
     container_name: lcoj_wsevent
     build:
