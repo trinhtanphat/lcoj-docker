@@ -17,7 +17,11 @@ HOST = os.environ.get('HOST', 'localhost')
 
 # Uncomment and set to the domain names this site is intended to serve.
 # You must do this once you set DEBUG to False.
-ALLOWED_HOSTS = [HOST]
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get('ALLOWED_HOSTS', HOST).split(',')
+    if host.strip()
+]
 
 
 def _env_flag(name, default=False):
